@@ -26,6 +26,7 @@ from django.utils.formats import (
     date_format, get_format, get_format_modules, iter_format_modules, localize,
     localize_input, reset_format_cache, sanitize_separators, time_format,
 )
+from django.utils.functional import Promise
 from django.utils.numberformat import format as nformat
 from django.utils.safestring import SafeBytes, SafeString, SafeText, mark_safe
 from django.utils.six import PY3
@@ -178,6 +179,16 @@ class TranslationTests(SimpleTestCase):
         self.assertEqual(six.text_type(s1), "test")
         s2 = pickle.loads(pickle.dumps(s1))
         self.assertEqual(six.text_type(s2), "test")
+
+    def test_lazy_instanceof_text(self):
+        s1 = ugettext_lazy("test")
+        self.assertIsInstance(s1, six.text_type)
+        self.assertIsInstance(s1, Promise)  # recommended way to identify lazy result
+
+        # Real-world cases:
+        from six.moves.urllib.parse import urlencode
+        self.assertEqual(urlencode({'t': ugettext_lazy("scrúdú")}), "t=scr%C3%BAd%C3%BA")
+        self.assertEqual(urlencode({'t': ugettext_lazy("test")}, doseq=True), "t=test")
 
     @override_settings(LOCALE_PATHS=extended_locale_paths)
     def test_ungettext_lazy(self):

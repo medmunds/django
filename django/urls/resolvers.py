@@ -19,7 +19,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils import lru_cache, six
 from django.utils.datastructures import MultiValueDict
 from django.utils.encoding import force_str, force_text
-from django.utils.functional import cached_property
+from django.utils.functional import cached_property, Promise
 from django.utils.http import RFC3986_SUBDELIMS, urlquote
 from django.utils.regex_helper import normalize
 from django.utils.translation import get_language
@@ -98,7 +98,8 @@ class LocaleRegexProvider(object):
         """
         language_code = get_language()
         if language_code not in self._regex_dict:
-            regex = self._regex if isinstance(self._regex, six.string_types) else force_text(self._regex)
+            regex = self._regex if (isinstance(self._regex, six.string_types)
+                                    and not isinstance(self._regex, Promise)) else force_text(self._regex)
             try:
                 compiled_regex = re.compile(regex, re.UNICODE)
             except re.error as e:

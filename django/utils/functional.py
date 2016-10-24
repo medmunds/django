@@ -132,6 +132,11 @@ def lazy(func, *resultclasses):
             else:
                 return func(*self.__args, **self.__kw)
 
+        @property
+        def __class__(self):
+            # proxy __class__ to make isinstance(lazy_result, resultclass) work
+            return self.__cast().__class__
+
         def __str__(self):
             # object defines __str__(), so __prepare_class__() won't overload
             # a __str__() method from the proxied class.

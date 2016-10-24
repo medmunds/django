@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 import unittest
 
 from django.utils import six
-from django.utils.functional import cached_property, lazy, lazy_property
+from django.utils.functional import cached_property, lazy, lazy_property, Promise
 
 
 class FunctionalTestCase(unittest.TestCase):
@@ -145,3 +145,9 @@ class FunctionalTestCase(unittest.TestCase):
         original_object = b'J\xc3\xbcst a str\xc3\xadng'
         lazy_obj = lazy(lambda: original_object, bytes)
         self.assertEqual(repr(original_object), repr(lazy_obj()))
+
+    def test_lazy_instanceof(self):
+        original_object = 'Lazy translation text'
+        lazy_obj = lazy(lambda: original_object, six.text_type)
+        self.assertIsInstance(lazy_obj(), six.text_type)
+        self.assertIsInstance(lazy_obj(), Promise)  # recommended way to identify lazy result
