@@ -1,13 +1,16 @@
 """SMTP email backend class."""
 
+import email.policy
 import smtplib
 import ssl
 import threading
+from email.errors import HeaderParseError
+from email.headerregistry import Address, parser
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
-from django.core.mail.message import sanitize_address
 from django.core.mail.utils import DNS_NAME
+from django.utils.encoding import force_str, punycode
 from django.utils.functional import cached_property
 
 
@@ -49,6 +52,7 @@ class EmailBackend(BaseEmailBackend):
                 "EMAIL_USE_TLS/EMAIL_USE_SSL are mutually exclusive, so only set "
                 "one of those settings to True."
             )
+        self.idna_encode_domains = True
         self.connection = None
         self._lock = threading.RLock()
 
@@ -145,18 +149,43 @@ class EmailBackend(BaseEmailBackend):
         """A helper method that does the actual sending."""
         if not email_message.recipients():
             return False
-        encoding = email_message.encoding or settings.DEFAULT_CHARSET
-        from_email = sanitize_address(email_message.from_email, encoding)
-        recipients = [
-            sanitize_address(addr, encoding) for addr in email_message.recipients()
-        ]
-        message = email_message.message()
+        from_email = self._prep_address(email_message.from_email)
+        recipients = [self._prep_address(addr) for addr in email_message.recipients()]
+        message = email_message.message(policy=email.policy.SMTP)
         try:
-            self.connection.sendmail(
-                from_email, recipients, message.as_bytes(linesep="\r\n")
-            )
+            self.connection.sendmail(from_email, recipients, message.as_bytes())
         except smtplib.SMTPException:
             if not self.fail_silently:
                 raise
             return False
         return True
+
+    def _prep_address(self, address):
+        """
+        Return the addr-spec portion of an email address, with IDNA encoding
+        applied to non-ASCII domains when enabled. Raises ValueError for invalid
+        addresses, including CR/NL injection.
+        """
+        # (This is the subset of the old django.mail.message.sanitize_address()
+        # necessary for the SMTP protocol.)
+        address = force_str(address)
+        try:
+            token, rest = parser.get_mailbox(address)
+        except (HeaderParseError, ValueError, IndexError):
+            raise ValueError(f"Invalid address {address!r}") from None
+        else:
+            if rest:
+                raise ValueError(
+                    f"Invalid address; only '{token}' could be parsed from {address!r}"
+                )
+
+        domain = token.domain or ""
+        if self.idna_encode_domains:
+            # (This returns the original domain if it's already ASCII.)
+            domain = punycode(domain)
+
+        try:
+            return str(Address(username=token.local_part, domain=domain))
+        except ValueError:
+            # Address() will reject CR/NL that made it through the parser.
+            raise ValueError(f"Invalid address {address!r}") from None
