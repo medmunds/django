@@ -2403,6 +2403,20 @@ class SMTPBackendTests(BaseEmailBackendTests, SMTPBackendTestsBase):
         sent = backend.send_messages([email])
         self.assertEqual(sent, 0)
 
+    def test_rejects_non_ascii_local_part(self):
+        """
+        Using the SMTPUTF8 extension (RFC 6532) is required for non-ASCII local-parts.
+        The SMTP EmailBackend does not currently support SMTPUTF8. #35713.
+        """
+        backend = smtp.EmailBackend()
+        backend.connection = mock.Mock(spec=object())
+        email = EmailMessage(to=["nø@example.dk"])
+        with self.assertRaisesMessage(
+            ValueError,
+            "Invalid address 'nø@example.dk': local-part contains non-ASCII characters",
+        ):
+            backend.send_messages([email])
+
     def test_avoids_sending_to_invalid_addresses(self):
         """
         Verify invalid addresses can't sneak into SMTP commands through

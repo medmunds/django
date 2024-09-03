@@ -5,7 +5,7 @@ import smtplib
 import ssl
 import threading
 from email.errors import HeaderParseError
-from email.headerregistry import Address, parser
+from email.headerregistry import Address, AddressHeader
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
@@ -52,7 +52,6 @@ class EmailBackend(BaseEmailBackend):
                 "EMAIL_USE_TLS/EMAIL_USE_SSL are mutually exclusive, so only set "
                 "one of those settings to True."
             )
-        self.idna_encode_domains = True
         self.connection = None
         self._lock = threading.RLock()
 
@@ -160,32 +159,42 @@ class EmailBackend(BaseEmailBackend):
             return False
         return True
 
-    def _prep_address(self, address):
+    def _prep_address(self, address, utf8=False):
         """
         Return the addr-spec portion of an email address, with IDNA encoding
         applied to non-ASCII domains when enabled. Raises ValueError for invalid
         addresses, including CR/NL injection.
+
+        If utf8 is True, process the address for sending with the SMTPUTF8
+        extension. Otherwise, force ASCII encoding and raise ValueError if
+        that isn't possible (e.g., non-ASCII local-part).
         """
         # (This is the subset of the old django.mail.message.sanitize_address()
         # necessary for the SMTP protocol.)
         address = force_str(address)
         try:
-            token, rest = parser.get_mailbox(address)
-        except (HeaderParseError, ValueError, IndexError):
+            parsed = AddressHeader.value_parser(address)
+        except (AssertionError, HeaderParseError, IndexError, TypeError, ValueError):
+            # (Don't include the parser error message. It's generally not helpful.)
             raise ValueError(f"Invalid address {address!r}") from None
         else:
-            if rest:
-                raise ValueError(
-                    f"Invalid address; only '{token}' could be parsed from {address!r}"
-                )
+            defects = set(str(defect) for defect in parsed.all_defects)
+            # Local mailboxes like "From: webmaster" are allowed (#15042).
+            defects.discard("addr-spec local part with no domain")
+            # Non-ASCII local-part is allowed with SMTPUTF8.
+            if utf8:
+                defects.discard("local-part contains non-ASCII characters")
+            if defects:
+                raise ValueError(f"Invalid address {address!r}: {'; '.join(defects)}")
 
-        domain = token.domain or ""
-        if self.idna_encode_domains:
-            # (This returns the original domain if it's already ASCII.)
-            domain = punycode(domain)
+        mailboxes = parsed.all_mailboxes
+        if len(mailboxes) != 1:
+            raise ValueError(f"Invalid address {address!r}: must be a single address")
 
-        try:
-            return str(Address(username=token.local_part, domain=domain))
-        except ValueError:
-            # Address() will reject CR/NL that made it through the parser.
-            raise ValueError(f"Invalid address {address!r}") from None
+        mailbox = mailboxes[0]
+        if utf8 or mailbox.domain is None or mailbox.domain.isascii():
+            return mailbox.addr_spec
+        else:
+            # Re-compose an addr-spec with the IDNA encoded domain.
+            domain = punycode(mailbox.domain)
+            return str(Address(username=mailbox.local_part, domain=domain))
