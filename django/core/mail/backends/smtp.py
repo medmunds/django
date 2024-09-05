@@ -1,13 +1,16 @@
 """SMTP email backend class."""
 
+import email.policy
 import smtplib
 import ssl
 import threading
+from email.errors import HeaderParseError
+from email.headerregistry import Address, AddressHeader
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
-from django.core.mail.message import sanitize_address
 from django.core.mail.utils import DNS_NAME
+from django.utils.encoding import force_str, punycode
 from django.utils.functional import cached_property
 
 
@@ -145,18 +148,53 @@ class EmailBackend(BaseEmailBackend):
         """A helper method that does the actual sending."""
         if not email_message.recipients():
             return False
-        encoding = email_message.encoding or settings.DEFAULT_CHARSET
-        from_email = sanitize_address(email_message.from_email, encoding)
-        recipients = [
-            sanitize_address(addr, encoding) for addr in email_message.recipients()
-        ]
-        message = email_message.message()
+        from_email = self._prep_address(email_message.from_email)
+        recipients = [self._prep_address(addr) for addr in email_message.recipients()]
+        message = email_message.message(policy=email.policy.SMTP)
         try:
-            self.connection.sendmail(
-                from_email, recipients, message.as_bytes(linesep="\r\n")
-            )
+            self.connection.sendmail(from_email, recipients, message.as_bytes())
         except smtplib.SMTPException:
             if not self.fail_silently:
                 raise
             return False
         return True
+
+    def _prep_address(self, address, utf8=False):
+        """
+        Return the addr-spec portion of an email address, with IDNA encoding
+        applied to non-ASCII domains when enabled. Raises ValueError for invalid
+        addresses, including CR/NL injection.
+
+        If utf8 is True, process the address for sending with the SMTPUTF8
+        extension. Otherwise, force ASCII encoding and raise ValueError if
+        that isn't possible (e.g., non-ASCII local-part).
+        """
+        # (This is the subset of the old django.mail.message.sanitize_address()
+        # necessary for the SMTP protocol.)
+        address = force_str(address)
+        try:
+            parsed = AddressHeader.value_parser(address)
+        except (AssertionError, HeaderParseError, IndexError, TypeError, ValueError):
+            # (Don't include the parser error message. It's generally not helpful.)
+            raise ValueError(f"Invalid address {address!r}") from None
+        else:
+            defects = set(str(defect) for defect in parsed.all_defects)
+            # Local mailboxes like "From: webmaster" are allowed (#15042).
+            defects.discard("addr-spec local part with no domain")
+            # Non-ASCII local-part is allowed with SMTPUTF8.
+            if utf8:
+                defects.discard("local-part contains non-ASCII characters")
+            if defects:
+                raise ValueError(f"Invalid address {address!r}: {'; '.join(defects)}")
+
+        mailboxes = parsed.all_mailboxes
+        if len(mailboxes) != 1:
+            raise ValueError(f"Invalid address {address!r}: must be a single address")
+
+        mailbox = mailboxes[0]
+        if utf8 or mailbox.domain is None or mailbox.domain.isascii():
+            return mailbox.addr_spec
+        else:
+            # Re-compose an addr-spec with the IDNA encoded domain.
+            domain = punycode(mailbox.domain)
+            return str(Address(username=mailbox.local_part, domain=domain))
