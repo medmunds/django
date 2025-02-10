@@ -234,13 +234,13 @@ class DeprecatePosargsTests(SimpleTestCase):
             def some_method(self, *, a, b=1):
                 return self.a, self.b, a, b
 
-            @staticmethod
             @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+            @staticmethod
             def some_static_method(*, a, b=1):
                 return a, b
 
-            @classmethod
             @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+            @classmethod
             def some_class_method(cls, *, a, b=1):
                 return cls.__name__, a, b
 
@@ -303,29 +303,58 @@ class DeprecatePosargsTests(SimpleTestCase):
                 result = SomeClass.some_class_method(10, 20)
             self.assertEqual(result, ("SomeClass", 10, 20))
 
-    def test_incorrect_classmethod_order(self):
-        """Catch classmethod applied in wrong order."""
-        with self.assertRaisesMessage(
-            TypeError, "Apply @classmethod before @deprecate_posargs."
-        ):
+        with self.subTest("Class method on class"):
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of positional arguments is deprecated."
+                " Change to `some_class_method(a=..., b=...)`.",
+            ):
+                result = SomeClass.some_class_method(10, 20)
+            self.assertEqual(result, ("SomeClass", 10, 20))
 
-            class SomeClass:
-                @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a"])
-                @classmethod
-                def some_class_method(cls, *, a):
-                    pass
+    def test_other_classmethod_order(self):
+        """classmethod also works before deprecate_posargs."""
+
+        class SomeClass:
+            @classmethod
+            @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+            def some_class_method(cls, *, a, b=1):
+                return cls.__name__, a, b
+
+        with self.subTest("Class method on instance"):
+            instance = SomeClass()
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of positional arguments is deprecated."
+                " Change to `some_class_method(a=..., b=...)`.",
+            ):
+                result = instance.some_class_method(10, 20)
+            self.assertEqual(result, ("SomeClass", 10, 20))
+
+        with self.subTest("Class method on class"):
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of positional arguments is deprecated."
+                " Change to `some_class_method(a=..., b=...)`.",
+            ):
+                result = SomeClass.some_class_method(10, 20)
+            self.assertEqual(result, ("SomeClass", 10, 20))
 
     def test_incorrect_staticmethod_order(self):
         """Catch staticmethod applied in wrong order."""
         with self.assertRaisesMessage(
-            TypeError, "Apply @staticmethod before @deprecate_posargs."
+            TypeError, "Apply @staticmethod after @deprecate_posargs."
         ):
 
             class SomeClass:
-                @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a"])
                 @staticmethod
+                @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a"])
                 def some_static_method(*, a):
                     pass
+
+            # Wrong order can't be detected until called.
+            instance = SomeClass()
+            instance.some_static_method(10)
 
     async def test_async(self):
         """A decorated async function is still async."""
@@ -360,6 +389,70 @@ class DeprecatePosargsTests(SimpleTestCase):
         ):
             result = lambda_func(10, 20)
         self.assertEqual(result, (10, 20))
+
+    def test_non_standard_names(self):
+        """
+        Bound `self` and `cls` parameters should not factor into the warning,
+        even if using non-standard names. `__init__` should only be converted
+        to a class name if it appears in a class.
+        """
+
+        class UnusualParams:
+            @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+            def method(this, *, a, b=1):
+                pass
+
+            @classmethod
+            @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+            def class_method(klass, *, a, b=1):
+                pass
+
+            @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+            @staticmethod
+            def static_method(cls, *, a, b=1):
+                pass
+
+        @deprecate_posargs(RemovedAfterNextVersionWarning, moved=["a", "b"])
+        def __init__(self, *, a, b=1):
+            pass
+
+        with self.subTest("Bound `this`"):
+            # *All* (unbound) positional args are deprecated.
+            instance = UnusualParams()
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of positional arguments is deprecated."
+                " Change to `method(a=..., b=...)`.",
+            ):
+                instance.method(10, 20)
+
+        with self.subTest("Bound `klass`"):
+            # *All* (unbound) positional args are deprecated.
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of positional arguments is deprecated."
+                " Change to `class_method(a=..., b=...)`.",
+            ):
+                UnusualParams.class_method(10, 20)
+
+        with self.subTest("Unbound `cls`"):
+            # Only *some* positional args are deprecated. `cls` is unbound.
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of some positional arguments is deprecated."
+                " Change to `static_method(..., a=..., b=...)`.",
+            ):
+                UnusualParams.static_method(None, 10, 20)
+
+        with self.subTest("Unbound `self`"):
+            # Only *some* positional args are deprecated. `self` is unbound.
+            # The function is named `__init__`.
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Use of some positional arguments is deprecated."
+                " Change to `__init__(..., a=..., b=...)`.",
+            ):
+                __init__(None, 10, 20)
 
     def test_warning_stacklevel(self):
         """The warning points to caller, not the decorator implementation."""

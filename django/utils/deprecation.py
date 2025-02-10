@@ -85,7 +85,8 @@ class RenameMethodsBase(type):
         return new_class
 
 
-def deprecate_posargs(category, *, moved):
+# This is a decorator implemented as a descriptor, so uses a lowercase class name.
+class deprecate_posargs:
     """
     Function/method decorator to deprecate some or all positional arguments.
     The decorated function will map any positional arguments after the `*`
@@ -112,18 +113,106 @@ def deprecate_posargs(category, *, moved):
     positional parameters. (But it's OK to re-order or add keyword-only params.)
     """
 
-    def decorator(func):
-        if isinstance(func, type):
+    message_all_deprecated = (
+        "Use of positional arguments is deprecated. Change to `{replacement}`."
+    )
+    message_some_deprecated = (
+        "Use of some positional arguments is deprecated. Change to `{replacement}`."
+    )
+
+    def __init__(self, category, *, moved):
+        self.category = category
+        self.moveable_param_names = moved
+
+        self.func = None
+        self.wrapper = None
+
+        self.func_name = "<<UNINITIALIZED>>"
+        self.num_positional_params = 0
+        self.num_bound_params = 0
+        self.max_positional_args = 0
+
+    def __call__(self, func=None, *args, **kwargs):
+        if self.func or func is None or args or kwargs:
+            # If @deprecate_posargs is applied after @staticmethod, calling
+            # the method will end up back in here. (Unfortunately, there's
+            # no way to detect this at declaration time.)
+            raise TypeError("Apply @staticmethod after @deprecate_posargs.")
+
+        if isinstance(func, (classmethod, staticmethod)):
+            self.func = func.__func__
+        else:
+            self.func = func
+        self.func_name = func.__name__
+        self.num_bound_params = 0
+        self.inspect_signature()
+        self.build_wrapper()
+
+        if isinstance(func, staticmethod):
+            return staticmethod(self.wrapper)
+        elif isinstance(func, classmethod):
+            self.num_bound_params = 1
+            return classmethod(self.wrapper)
+        elif self.will_be_method():
+            # Method supporting descriptor protocol.
+            return self
+        else:
+            # Bare function: return the wrapper immediately.
+            return self.wrapper
+
+    def __set_name__(self, owner, name):
+        # For __init__, substitute the class name in warnings.
+        if name == "__init__":
+            self.func_name = owner.__name__
+        else:
+            self.func_name = name
+
+    def __get__(self, instance, owner=None):
+        wrapper = self.wrapper
+        if owner and instance is not None:
+            # Bound method.
+            self.num_bound_params = 1
+            wrapper = self.wrapper.__get__(instance, owner)
+
+        return wrapper
+
+    def build_wrapper(self):
+        if iscoroutinefunction(self.func):
+
+            @functools.wraps(self.func)
+            async def wrapper(*args, **kwargs):
+                if len(args) > self.num_positional_params:
+                    args, kwargs = self.remap_deprecated_args(args, kwargs)
+                return await self.func(*args, **kwargs)
+
+        else:
+
+            @functools.wraps(self.func)
+            def wrapper(*args, **kwargs):
+                if len(args) > self.num_positional_params:
+                    args, kwargs = self.remap_deprecated_args(args, kwargs)
+                return self.func(*args, **kwargs)
+
+        self.wrapper = wrapper
+
+    def inspect_signature(self):
+        if isinstance(self.func, type):
             raise TypeError(
                 "@deprecate_posargs cannot be applied to a class."
                 " (Apply it to the __init__ method.)"
             )
-        if isinstance(func, classmethod):
-            raise TypeError("Apply @classmethod before @deprecate_posargs.")
-        if isinstance(func, staticmethod):
-            raise TypeError("Apply @staticmethod before @deprecate_posargs.")
 
-        params = inspect.signature(func).parameters
+        params = inspect.signature(self.func).parameters
+
+        num_by_kind = Counter(param.kind for param in params.values())
+        self.num_positional_params = (
+            num_by_kind[inspect.Parameter.POSITIONAL_ONLY]
+            + num_by_kind[inspect.Parameter.POSITIONAL_OR_KEYWORD]
+        )
+        self.max_positional_args = self.num_positional_params + len(
+            self.moveable_param_names
+        )
+
         num_by_kind = Counter(param.kind for param in params.values())
 
         if num_by_kind[inspect.Parameter.VAR_POSITIONAL] > 0:
@@ -131,123 +220,86 @@ def deprecate_posargs(category, *, moved):
                 "@deprecate_posargs() cannot be used with variable positional `*args`."
             )
 
-        num_positional_params = (
-            num_by_kind[inspect.Parameter.POSITIONAL_ONLY]
-            + num_by_kind[inspect.Parameter.POSITIONAL_OR_KEYWORD]
-        )
-        num_keyword_only_params = num_by_kind[inspect.Parameter.KEYWORD_ONLY]
-        if num_keyword_only_params < 1:
+        if num_by_kind[inspect.Parameter.KEYWORD_ONLY] < 1:
             raise TypeError(
                 "@deprecate_posargs() requires at least one keyword-only parameter"
                 " (after a `*` entry in the parameters list)."
             )
         if any(
             name not in params or params[name].kind != inspect.Parameter.KEYWORD_ONLY
-            for name in moved
+            for name in self.moveable_param_names
         ):
             raise TypeError(
                 "@deprecate_posargs() `moved` names must"
                 " all be keyword-only parameters."
             )
 
-        num_moveable_args = len(moved)
-        max_positional_args = num_positional_params + num_moveable_args
+    def will_be_method(self):
+        """
+        Determine if the decorated function will end up becoming a method (instance,
+        class, or static method). This check works with the plain function passed
+        to a decorator--even before class definition is complete.
+        """
+        # A method's "local qualname" is "Class.method" or "Class.Nested.method".
+        # A bare function's local qualname is just the function name, without any dots.
+        # For classes/functions defined within some other function, the "local qualname"
+        # ignores the containing function's name.
+        local_qualname = self.func.__qualname__.rsplit("<locals>.", 1)[-1]
+        return "." in local_qualname
 
-        param_names = list(params.keys())
-
-        # The deprecation message logic needs to know if func is bound to a class.
-        # But because function decorators always receive plain, unbound functions,
-        # class information is not available here. (inspect.ismethod(func) will
-        # always return False, and func.__self__ will never be set.) This only
-        # affects message construction, not argument mapping logic, so it's fine
-        # to just look for the customary bound parameter names.
-        num_bound_params = 1 if param_names[0] in ("self", "cls") else 0
-        func_name = func.__name__
-        if func_name == "__init__":
-            # In the warning, show "ClassName(...)" rather than "__init__(...)".
-            # (Since class info isn't available, extract the name from __qualname__.)
-            func_name = func.__qualname__.rsplit(".", 2)[-2]
-
-        if num_positional_params > num_bound_params:
-            # Clarify that only "some" (not all) positional arguments are affected.
-            message_template = (
-                "Use of some positional arguments is deprecated."
-                " Change to `{replacement}`."
-            )
-        else:
-            message_template = (
-                "Use of positional arguments is deprecated."
-                " Change to `{replacement}`."
+    def remap_deprecated_args(self, args, kwargs):
+        """
+        Move deprecated positional args to kwargs. Returns updated (args, kwargs).
+        """
+        num_positional_args = len(args)
+        if num_positional_args > self.max_positional_args:
+            raise TypeError(
+                f"{self.func_name}() takes"
+                f" at most {self.max_positional_args} positional argument(s)"
+                f" (including {len(self.moveable_param_names)} deprecated)"
+                f" but {num_positional_args} were given"
             )
 
-        def remap_deprecated_args(args, kwargs):
-            """
-            Move deprecated positional args to kwargs. Returns updated (args, kwargs).
-            """
-            num_positional_args = len(args)
-            if num_positional_args > max_positional_args:
-                raise TypeError(
-                    f"{func_name}() takes"
-                    f" at most {max_positional_args} positional argument(s)"
-                    f" (including {num_moveable_args} deprecated)"
-                    f" but {num_positional_args} were given"
-                )
+        moved_names = self.moveable_param_names[
+            : num_positional_args - self.num_positional_params
+        ]
+        conflicts = set(moved_names) & set(kwargs)
+        if conflicts:
+            conflicts_str = ", ".join(
+                f"'{name}'" for name in moved_names if name in conflicts
+            )
+            raise TypeError(
+                f"{self.func_name}() got both deprecated positional and keyword"
+                f" argument values for {conflicts_str}."
+            )
 
-            moved_names = moved[: num_positional_args - num_positional_params]
-            conflicts = set(moved_names) & set(kwargs)
-            if conflicts:
-                # Report duplicate param names in original parameter order.
-                conflicts_str = ", ".join(
-                    f"'{name}'" for name in moved_names if name in conflicts
-                )
-                raise TypeError(
-                    f"{func_name}() got both deprecated positional and keyword"
-                    f" argument values for {conflicts_str}."
-                )
+        # Do the remapping.
+        moved_kwargs = dict(zip(moved_names, args[self.num_positional_params :]))
+        remaining_args = args[: self.num_positional_params]
+        updated_kwargs = kwargs | moved_kwargs
 
-            # Do the remapping.
-            moved_kwargs = dict(zip(moved_names, args[num_positional_params:]))
-            remaining_args = args[:num_positional_params]
-            updated_kwargs = kwargs | moved_kwargs
+        # Construct a suggested replacement showing the affected arguments:
+        #     "Change to `func_name(..., kwonly1=..., kwonly2=..., ...)`."
+        # - Initial "..." represents remaining (non-remapped) positional args,
+        #   excluding `self` or `cls`.
+        # - Trailing "..." represents other (non-remapped) keyword args.
+        replacement_args = [f"{name}=..." for name in moved_names]
+        if len(remaining_args) > self.num_bound_params:
+            replacement_args.insert(0, "...")
+        if kwargs:
+            replacement_args.append("...")
+        replacement_args_str = ", ".join(replacement_args)
+        replacement = f"{self.func_name}({replacement_args_str})"
 
-            # Issue the deprecation warning. Construct a suggested replacement
-            # showing the affected arguments:
-            #     "Change to `func_name(..., kwonly1=..., kwonly2=..., ...)`."
-            # - Initial "..." represents remaining (non-remapped) positional args,
-            #   excluding `self` or `cls`.
-            # - Trailing "..." represents other (non-remapped) keyword args.
-            replacement_args = [f"{name}=..." for name in moved_names]
-            if len(remaining_args) > num_bound_params:
-                replacement_args.insert(0, "...")
-            if kwargs:
-                replacement_args.append("...")
-            replacement_args_str = ", ".join(replacement_args)
-            replacement = f"{func_name}({replacement_args_str})"
-
-            message = message_template.format(replacement=replacement)
-            warnings.warn(message, category, stacklevel=3)
-
-            return remaining_args, updated_kwargs
-
-        if iscoroutinefunction(func):
-
-            @functools.wraps(func)
-            async def wrapper(*args, **kwargs):
-                if len(args) > num_positional_params:
-                    args, kwargs = remap_deprecated_args(args, kwargs)
-                return await func(*args, **kwargs)
-
+        # Issue the warning message.
+        if self.num_positional_params > self.num_bound_params:
+            message_template = self.message_some_deprecated
         else:
+            message_template = self.message_all_deprecated
+        message = message_template.format(replacement=replacement)
+        warnings.warn(message, self.category, stacklevel=3)
 
-            @functools.wraps(func)
-            def wrapper(*args, **kwargs):
-                if len(args) > num_positional_params:
-                    args, kwargs = remap_deprecated_args(args, kwargs)
-                return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
+        return remaining_args, updated_kwargs
 
 
 class MiddlewareMixin:
