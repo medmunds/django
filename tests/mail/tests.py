@@ -35,6 +35,7 @@ from django.core.mail.backends import console, dummy, filebased, locmem, smtp
 from django.core.mail.message import sanitize_address
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import requires_tz_support
+from django.utils.deprecation import RemovedInDjango70Warning
 from django.utils.translation import gettext_lazy
 
 try:
@@ -1480,10 +1481,9 @@ class MailTests(MailTestsMixin, SimpleTestCase):
 
     def test_positional_arguments_order(self):
         """
-        EmailMessage class docs: "… is initialized with the following parameters
-        (in the given order, if positional arguments are used)."
+        The order of the four positional parameters to EmailMessage()
+        must be preserved to avoid breaking existing code.
         """
-        connection = mail.get_connection()
         email = EmailMessage(
             # (If you need to insert/remove/reorder any params here,
             # that indicates a breaking change to documented behavior.)
@@ -1491,31 +1491,14 @@ class MailTests(MailTestsMixin, SimpleTestCase):
             "body",
             "from@example.com",
             ["to@example.com"],
-            ["bcc@example.com"],
-            connection,
-            [EmailAttachment("file.txt", "attachment", "text/plain")],
-            {"X-Header": "custom header"},
-            ["cc@example.com"],
-            ["reply-to@example.com"],
-            # (New options can be added below here, ideally as keyword-only args.)
+            # (New options should be added as keyword-only params.)
         )
 
         message = email.message()
         self.assertEqual(message.get_all("Subject"), ["subject"])
         self.assertEqual(message.get_all("From"), ["from@example.com"])
         self.assertEqual(message.get_all("To"), ["to@example.com"])
-        self.assertEqual(message.get_all("X-Header"), ["custom header"])
-        self.assertEqual(message.get_all("Cc"), ["cc@example.com"])
-        self.assertEqual(message.get_all("Reply-To"), ["reply-to@example.com"])
-        self.assertEqual(message.get_payload(0).get_payload(), "body")
-        self.assertEqual(
-            self.get_decoded_attachments(email),
-            [("file.txt", "attachment", "text/plain")],
-        )
-        self.assertEqual(
-            email.recipients(), ["to@example.com", "cc@example.com", "bcc@example.com"]
-        )
-        self.assertIs(email.get_connection(), connection)
+        self.assertEqual(message.get_payload(), "body")
 
     def test_all_params_can_be_set_before_send(self):
         """
@@ -1527,31 +1510,33 @@ class MailTests(MailTestsMixin, SimpleTestCase):
         original_connection = mail.get_connection(username="original")
         new_connection = mail.get_connection(username="new")
         email = EmailMessage(
-            "original subject",
-            "original body",
-            "original-from@example.com",
-            ["original-to@example.com"],
-            ["original-bcc@example.com"],
-            original_connection,
-            [EmailAttachment("original.txt", "original attachment", "text/plain")],
-            {"X-Header": "original header"},
-            ["original-cc@example.com"],
-            ["original-reply-to@example.com"],
+            subject="original subject",
+            body="original body",
+            from_email="original-from@example.com",
+            to=["original-to@example.com"],
+            cc=["original-cc@example.com"],
+            bcc=["original-bcc@example.com"],
+            reply_to=["original-reply-to@example.com"],
+            attachments=[
+                EmailAttachment("original.txt", "original attachment", "text/plain")
+            ],
+            headers={"X-Header": "original header"},
+            connection=original_connection,
         )
         email.subject = "new subject"
         email.body = "new body"
         email.from_email = "new-from@example.com"
         email.to = ["new-to@example.com"]
         email.bcc = ["new-bcc@example.com"]
-        email.connection = new_connection
+        email.cc = ["new-cc@example.com"]
+        email.reply_to = ["new-reply-to@example.com"]
         email.attachments = [
             ("new1.txt", "new attachment 1", "text/plain"),  # plain tuple.
             EmailAttachment("new2.txt", "new attachment 2", "text/csv"),
             MIMEImage(b"GIF89a...", "gif"),
         ]
         email.extra_headers = {"X-Header": "new header"}
-        email.cc = ["new-cc@example.com"]
-        email.reply_to = ["new-reply-to@example.com"]
+        email.connection = new_connection
 
         message = email.message()
         self.assertEqual(message.get_all("Subject"), ["new subject"])
@@ -2532,3 +2517,83 @@ class SMTPBackendStoppedServerTests(SMTPBackendTestsBase):
             self.backend.open()
         self.backend.fail_silently = True
         self.backend.open()
+
+
+# RemovedInDjango70Warning
+class MailDeprecatedPositionalArgsTests(MailTestsMixin, SimpleTestCase):
+    """
+    Verify a deprecation warning for the first affected parameter in each API.
+    The @deprecate_posargs tests cover additional parameters and corner cases.
+    """
+
+    def test_get_connection(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `get_connection(..., fail_silently=...)`.",
+        ):
+            mail.get_connection("django.core.mail.backends.console.EmailBackend", False)
+
+    def test_send_mail(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `send_mail(..., fail_silently=...)`.",
+        ):
+            mail.send_mail(
+                "subject", "message", "from@example.com", ["to@example.com"], False
+            )
+
+    def test_send_mass_mail(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `send_mass_mail(..., fail_silently=...)`.",
+        ):
+            mail.send_mass_mail(
+                [("subject", "message", "from@example.com", ["to@example.com"])], False
+            )
+
+    def test_mail_admins(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `mail_admins(..., fail_silently=...)`.",
+        ):
+            mail.mail_admins("subject", "message", False)
+
+    def test_mail_managers(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `mail_managers(..., fail_silently=...)`.",
+        ):
+            mail.mail_managers("subject", "message", False)
+
+    def test_email_message_init(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `EmailMessage(..., bcc=...)`.",
+        ):
+            EmailMessage(
+                "subject",
+                "message",
+                "from@example.com",
+                ["to@example.com"],
+                ["bcc@example.com"],
+            )
+
+    def test_email_multi_alternatives_init(self):
+        with self.assertWarnsMessage(
+            RemovedInDjango70Warning,
+            "Use of some positional arguments is deprecated."
+            " Change to `EmailMultiAlternatives(..., bcc=...)`.",
+        ):
+            EmailMultiAlternatives(
+                "subject",
+                "message",
+                "from@example.com",
+                ["to@example.com"],
+                ["bcc@example.com"],
+            )
