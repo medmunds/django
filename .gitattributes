@@ -7,3 +7,7 @@ tests/staticfiles_tests/project/documents/test/*txt text eol=lf
 docs/releases/*.txt merge=union
 # Make GitHub syntax-highlight .html files as Django templates
 *.html linguist-language=django
+# Make GitHub syntax-highlight docs .txt files as reStructuredText
+docs/**/*.txt linguist-language=rst
+docs/**/LICENSE.txt linguist-language=text
+docs/requirements.txt linguist-language=pip-requirements
