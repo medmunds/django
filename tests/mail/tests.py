@@ -8,6 +8,7 @@ import tempfile
 from email import charset, message_from_binary_file
 from email import message_from_bytes as _message_from_bytes
 from email import policy
+from email.headerregistry import Address
 from email.message import EmailMessage as PyEmailMessage
 from email.message import Message as PyMessage
 from email.mime.image import MIMEImage
@@ -53,7 +54,14 @@ def message_from_bytes(s):
     email.message_from_bytes() using modern email.policy.default.
     Returns a modern email.message.EmailMessage.
     """
-    return _message_from_bytes(s, policy=policy.default)
+    # The modern email parser has a bug with adjacent rfc2047 encoded-words.
+    # This doesn't affect django.core.mail (which doesn't parse messages),
+    # but it can confuse our tests that try to verify sent content by reparsing
+    # the generated message. Apply a workaround if needed.
+    message = _message_from_bytes(s, policy=policy.default)
+    if _needs_cpython_128110_workaround and _rfc2047_prefix_bytes in s:
+        _apply_cpython_128110_workaround(message, s)
+    return message
 
 
 class MailTestsMixin:
@@ -2649,3 +2657,65 @@ class SMTPBackendStoppedServerTests(SMTPBackendTestsBase):
             self.backend.open()
         self.backend.fail_silently = True
         self.backend.open()
+
+
+# Check whether python/cpython#128110 has been fixed by seeing if space
+# between encoded-words is ignored (as required by RFC 2047 section 6.2).
+_needs_cpython_128110_workaround = (
+    _message_from_bytes(b"To: =??q?a?= =??q?b?= <to@ex>", policy=policy.default)
+)["To"].addresses[0].display_name != "ab"
+
+_rfc2047_prefix = "=?"  # start of an encoded-word.
+_rfc2047_prefix_bytes = _rfc2047_prefix.encode()
+
+
+def _apply_cpython_128110_workaround(message, msg_bytes):
+    """
+    Updates message in place to correct misparsed rfc2047 display-names
+    in address headers caused by https://github.com/python/cpython/issues/128110.
+
+    :param email.message.EmailMessage message: Message parsed with modern policy.
+    :param bytes msg_bytes: Content from which message was parsed.
+    """
+    from email.header import decode_header
+    from email.headerregistry import AddressHeader
+    from email.parser import BytesHeaderParser
+    from email.utils import getaddresses
+
+    def rfc2047_decode(s):
+        # Decode using legacy decode_header() (which doesn't have the bug).
+        return "".join(
+            (
+                segment
+                if charset is None and isinstance(segment, str)
+                else segment.decode(charset or "ascii")
+            )
+            for segment, charset in decode_header(s)
+        )
+
+    def build_address(name, address):
+        if "@" in address:
+            return Address(display_name=name, addr_spec=address)
+        else:
+            return Address(display_name=name, username=address, domain="")
+
+    # This workaround only applies to messages parsed with a modern policy.
+    assert not isinstance(message.policy, policy.Compat32)
+
+    # Reparse with compat32 to get access to raw (undecoded) headers.
+    raw_headers = BytesHeaderParser(policy=policy.compat32).parsebytes(msg_bytes)
+    for header, modern_value in message.items():
+        if not isinstance(modern_value, AddressHeader):
+            # The bug only affects structured address headers.
+            continue
+        raw_value = raw_headers[header]
+        if _rfc2047_prefix in raw_value:
+            # This workaround doesn't handle headers that appear more than once.
+            assert len(message.get_all(header)) == 1
+            # Reconstruct Address objects using legacy APIs (which don't have the bug).
+            unfolded = raw_value.replace("\r\n", "").replace("\n", "")
+            corrected_addresses = (
+                build_address(rfc2047_decode(name), address)
+                for name, address in getaddresses([unfolded])
+            )
+            message.replace_header(header, corrected_addresses)
