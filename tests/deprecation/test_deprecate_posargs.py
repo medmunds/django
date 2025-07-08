@@ -351,7 +351,7 @@ class DeprecatePosargsTests(SimpleTestCase):
         ):
             __init__(10)
 
-    def test_warning_stacklevel(self):
+    def test_warning_source_location(self):
         """The warning points to caller, not the decorator implementation."""
 
         @deprecate_posargs(RemovedAfterNextVersionWarning, "a")

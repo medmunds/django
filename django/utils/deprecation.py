@@ -1,9 +1,12 @@
 import functools
 import inspect
+import os.path
 import warnings
 from collections import Counter
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction, sync_to_async
+
+import django
 
 
 class RemovedInDjango61Warning(DeprecationWarning):
@@ -228,11 +231,12 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
 
             # Issue the deprecation warning.
             remapped_names_str = ", ".join(f"'{name}'" for name in remapped_names)
-            message = (
+            warnings.warn(
                 f"Passing positional argument(s) {remapped_names_str}"
-                f" to {func_name}() is deprecated. Use keyword arguments instead."
+                f" to {func_name}() is deprecated. Use keyword arguments instead.",
+                deprecation_warning,
+                skip_file_prefixes=(os.path.dirname(django.__file__),),
             )
-            warnings.warn(message, deprecation_warning, stacklevel=3)
 
             return remaining_args, updated_kwargs
 
