@@ -116,34 +116,28 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
             ...
 
     Caution: during the deprecation period, do not add any new *positional*
-    parameters or change the remaining ones. For example, this attempt to add
-    a new param would break code using the deprecated option posargs::
+    parameters or change the remaining ones. For example, this attempt
+    to add a new param would break code using the deprecated posargs::
 
         @deprecate_posargs(RemovedInDjangoXXWarning, ["option1", "option2"])
         def some_func(request, wrong_new_param=None, *, option1, option2=True):
-            # Broken: existing code may set wrong_new_param to option1's value.
+            # Broken: existing code may pass a value intended as option1
+            # in the wrong_new_param position.
             ...
 
-    However, it's acceptable to add new *keyword-only* parameters and to re-order
-    the existing ones, so long as the list passed to @deprecate_posargs is kept
-    in the original order. This change will work without breaking existing code::
+    However, it's acceptable to add new *keyword-only* parameters
+    and to re-order the existing ones, so long as the list passed
+    to @deprecate_posargs is kept in the original posargs order.
+    This change will work without breaking existing code::
 
         @deprecate_posargs(RemovedInDjangoXXWarning, ["option1", "option2"])
         def some_func(request, *, new_param=None, option2=True, option1):
             ...
 
-    The @deprecate_posargs decorator adds a small amount of overhead. In most cases
-    it won't be significant, but use with care in performance-critical code paths.
+    The @deprecate_posargs decorator adds a small amount of overhead.
+    In most cases it won't be significant, but use with care in performance-
+    critical code paths.
     """
-
-    message_template_singular = (
-        "Passing positional argument {remapped_names} to {func_name}()"
-        " is deprecated. Change it to a keyword arg."
-    )
-    message_template_plural = (
-        "Passing positional arguments {remapped_names} to {func_name}()"
-        " is deprecated. Change them to keyword args."
-    )
 
     def decorator(func):
         if isinstance(func, type):
@@ -179,8 +173,8 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
             for name in remappable_names
         ):
             raise TypeError(
-                "@deprecate_posargs() remappable_names must"
-                " all be keyword-only parameters."
+                "@deprecate_posargs() requires all remappable_names"
+                " to be keyword-only parameters."
             )
 
         num_remappable_args = len(remappable_names)
@@ -188,10 +182,12 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
 
         func_name = func.__name__
         if func_name == "__init__":
-            # In the warning, show "ClassName(...)" rather than "__init__(...)".
+            # In the warning, show "ClassName()" instead of "__init__()".
             # The class isn't defined yet, but its name is in __qualname__.
-            # Some examples: "ClassName.__init__", "Nested.ClassName.__init__",
-            # "MyTests.test_case.<locals>.ClassName.__init__".
+            # Some examples of __qualname__:
+            # - ClassName.__init__
+            # - Nested.ClassName.__init__
+            # - MyTests.test_case.<locals>.ClassName.__init__
             local_name = func.__qualname__.rsplit("<locals>.", 1)[-1]
             class_name = local_name.replace(".__init__", "")
             func_name = class_name
@@ -199,31 +195,30 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
         def remap_deprecated_args(args, kwargs):
             """
             Move deprecated positional args to kwargs and issue a warning.
-            Returns updated (args, kwargs).
+            Return updated (args, kwargs).
             """
             num_positional_args = len(args)
             if num_positional_args > max_positional_args:
                 raise TypeError(
-                    f"{func_name}() takes"
-                    f" at most {max_positional_args} positional argument(s)"
-                    f" (including {num_remappable_args} deprecated)"
-                    f" but {num_positional_args} were given."
+                    f"{func_name}() takes at most {max_positional_args}"
+                    f" positional argument(s) (including {num_remappable_args}"
+                    f" deprecated) but {num_positional_args} were given."
                 )
 
-            # Identify which of the potentially _remappable_ params
-            # are actually being _remapped_ in this particular call.
+            # Identify which of the _potentially remappable_ params
+            # are actually _being remapped_ in this particular call.
             remapped_names = remappable_names[
                 : num_positional_args - num_positional_params
             ]
             conflicts = set(remapped_names) & set(kwargs)
             if conflicts:
-                # Report duplicate param names in original parameter order.
+                # Report duplicate names in the original parameter order.
                 conflicts_str = ", ".join(
                     f"'{name}'" for name in remapped_names if name in conflicts
                 )
                 raise TypeError(
-                    f"{func_name}() got both deprecated positional and keyword"
-                    f" argument values for {conflicts_str}."
+                    f"{func_name}() got both deprecated positional"
+                    f" and keyword argument values for {conflicts_str}."
                 )
 
             # Do the remapping.
@@ -232,14 +227,10 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
             updated_kwargs = kwargs | remapped_kwargs
 
             # Issue the deprecation warning.
-            message_template = (
-                message_template_singular
-                if len(remapped_names) == 1
-                else message_template_plural
-            )
-            message = message_template.format(
-                remapped_names=", ".join(f"'{name}'" for name in remapped_names),
-                func_name=func_name,
+            remapped_names_str = ", ".join(f"'{name}'" for name in remapped_names)
+            message = (
+                f"Passing positional argument(s) {remapped_names_str}"
+                f" to {func_name}() is deprecated. Use keyword arguments instead."
             )
             warnings.warn(message, deprecation_warning, stacklevel=3)
 

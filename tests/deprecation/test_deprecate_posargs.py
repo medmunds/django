@@ -10,7 +10,9 @@ class DeprecatePosargsTests(SimpleTestCase):
     # you must substitute a specific RemovedInDjangoXXWarning.
 
     def test_all_keyword_only_params(self):
-        """Works when remapping all positional arguments to kwonly arguments."""
+        """
+        Works when remapping all positional arguments to kwonly arguments.
+        """
 
         @deprecate_posargs(RemovedAfterNextVersionWarning, ["a", "b"])
         def some_func(*, a=1, b=2):
@@ -19,8 +21,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("Multiple affected args"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_func() is deprecated."
-                " Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_func() is deprecated."
+                " Use keyword arguments instead.",
             ):
                 result = some_func(10, 20)
             self.assertEqual(result, (10, 20))
@@ -28,8 +30,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("One affected arg"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional argument 'a' to some_func() is deprecated."
-                " Change it to a keyword arg.",
+                "Passing positional argument(s) 'a' to some_func() is deprecated."
+                " Use keyword arguments instead.",
             ):
                 result = some_func(10)
             self.assertEqual(result, (10, 2))
@@ -43,8 +45,8 @@ class DeprecatePosargsTests(SimpleTestCase):
 
         with self.assertWarnsMessage(
             RemovedAfterNextVersionWarning,
-            "Passing positional argument 'b' to some_func() is deprecated."
-            " Change it to a keyword arg.",
+            "Passing positional argument(s) 'b' to some_func() is deprecated."
+            " Use keyword arguments instead.",
         ):
             result = some_func(10, 20)
         self.assertEqual(result, (10, 20))
@@ -71,8 +73,8 @@ class DeprecatePosargsTests(SimpleTestCase):
 
     def test_allows_reordering_keyword_only_params(self):
         """
-        Because remappable_names reflects the original positional argument order,
-        keyword-only params can be freely added and rearranged.
+        Because remappable_names reflects the original positional argument
+        order, keyword-only params can be freely added and rearranged.
         """
 
         # Original signature: some_func(b=2, a=1)
@@ -82,8 +84,8 @@ class DeprecatePosargsTests(SimpleTestCase):
 
         with self.assertWarnsMessage(
             RemovedAfterNextVersionWarning,
-            "Passing positional arguments 'b', 'a' to some_func() is deprecated."
-            " Change them to keyword args.",
+            "Passing positional argument(s) 'b', 'a' to some_func() is deprecated."
+            " Use keyword arguments instead.",
         ):
             result = some_func(20, 10)
         self.assertEqual(result, (0, 10, 20))
@@ -144,8 +146,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("Called with additional kwargs"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional argument 'b' to some_func() is deprecated."
-                " Change it to a keyword arg.",
+                "Passing positional argument(s) 'b' to some_func() is deprecated."
+                " Use keyword arguments instead.",
             ):
                 result = some_func(10, 20, c=30)
             self.assertEqual(result, (10, 20, {"c": 30}))
@@ -153,8 +155,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("Called without additional kwargs"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional argument 'b' to some_func() is deprecated."
-                " Change it to a keyword arg.",
+                "Passing positional argument(s) 'b' to some_func() is deprecated."
+                " Use keyword arguments instead.",
             ):
                 result = some_func(10, 20)
             self.assertEqual(result, (10, 20, {}))
@@ -180,8 +182,8 @@ class DeprecatePosargsTests(SimpleTestCase):
 
         with self.assertWarnsMessage(
             RemovedAfterNextVersionWarning,
-            "Passing positional argument 'c' to some_func() is deprecated."
-            " Change it to a keyword arg.",
+            "Passing positional argument(s) 'c' to some_func() is deprecated."
+            " Use keyword arguments instead.",
         ):
             result = some_func(10, 20, 30)
         self.assertEqual(result, (10, 20, 30))
@@ -216,8 +218,8 @@ class DeprecatePosargsTests(SimpleTestCase):
             # Warning should use the class name, not `__init__()`.
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to SomeClass() is deprecated."
-                " Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to SomeClass() is deprecated."
+                " Use keyword arguments instead.",
             ):
                 instance = SomeClass(10, 20)
             self.assertEqual(instance.a, 10)
@@ -227,8 +229,8 @@ class DeprecatePosargsTests(SimpleTestCase):
             instance = SomeClass()
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_method() is deprecated."
-                " Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_method()"
+                " is deprecated. Use keyword arguments instead.",
             ):
                 result = instance.some_method(10, 20)
             self.assertEqual(result, (0, 1, 10, 20))
@@ -237,8 +239,8 @@ class DeprecatePosargsTests(SimpleTestCase):
             instance = SomeClass()
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_static_method()"
-                " is deprecated. Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_static_method()"
+                " is deprecated. Use keyword arguments instead.",
             ):
                 result = instance.some_static_method(10, 20)
             self.assertEqual(result, (10, 20))
@@ -246,8 +248,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("Static method on class"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_static_method()"
-                " is deprecated. Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_static_method()"
+                " is deprecated. Use keyword arguments instead.",
             ):
                 result = SomeClass.some_static_method(10, 20)
             self.assertEqual(result, (10, 20))
@@ -256,8 +258,8 @@ class DeprecatePosargsTests(SimpleTestCase):
             instance = SomeClass()
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_class_method()"
-                " is deprecated. Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_class_method()"
+                " is deprecated. Use keyword arguments instead.",
             ):
                 result = instance.some_class_method(10, 20)
             self.assertEqual(result, ("SomeClass", 10, 20))
@@ -265,8 +267,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("Class method on class"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_class_method()"
-                " is deprecated. Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_class_method()"
+                " is deprecated. Use keyword arguments instead.",
             ):
                 result = SomeClass.some_class_method(10, 20)
             self.assertEqual(result, ("SomeClass", 10, 20))
@@ -308,8 +310,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         with self.subTest("With deprecation warning"):
             with self.assertWarnsMessage(
                 RemovedAfterNextVersionWarning,
-                "Passing positional arguments 'a', 'b' to some_func() is deprecated."
-                " Change them to keyword args.",
+                "Passing positional argument(s) 'a', 'b' to some_func() is deprecated."
+                " Use keyword arguments instead.",
             ):
                 result = await some_func(10, 20)
             self.assertEqual(result, (10, 20))
@@ -329,8 +331,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         )
         with self.assertWarnsMessage(
             RemovedAfterNextVersionWarning,
-            "Passing positional argument 'b' to <lambda>() is deprecated."
-            " Change it to a keyword arg.",
+            "Passing positional argument(s) 'b' to <lambda>() is deprecated."
+            " Use keyword arguments instead.",
         ):
             result = lambda_func(10, 20)
         self.assertEqual(result, (10, 20))
@@ -344,8 +346,8 @@ class DeprecatePosargsTests(SimpleTestCase):
 
         with self.assertWarnsMessage(
             RemovedAfterNextVersionWarning,
-            "Passing positional argument 'a' to __init__() is deprecated."
-            " Change it to a keyword arg.",
+            "Passing positional argument(s) 'a' to __init__() is deprecated."
+            " Use keyword arguments instead.",
         ):
             __init__(10)
 
@@ -397,8 +399,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         """remappable_names cannot refer to positional-or-keyword params."""
         with self.assertRaisesMessage(
             TypeError,
-            "@deprecate_posargs() remappable_names"
-            " must all be keyword-only parameters.",
+            "@deprecate_posargs() requires all remappable_names"
+            " to be keyword-only parameters.",
         ):
 
             @deprecate_posargs(RemovedAfterNextVersionWarning, ["a", "b"])
@@ -409,8 +411,8 @@ class DeprecatePosargsTests(SimpleTestCase):
         """remappable_names cannot refer to variable kwargs."""
         with self.assertRaisesMessage(
             TypeError,
-            "@deprecate_posargs() remappable_names"
-            " must all be keyword-only parameters.",
+            "@deprecate_posargs() requires all remappable_names"
+            " to be keyword-only parameters.",
         ):
 
             @deprecate_posargs(RemovedAfterNextVersionWarning, ["b", "c"])
@@ -420,8 +422,9 @@ class DeprecatePosargsTests(SimpleTestCase):
 
     def test_decorator_preserves_metadata(self):
         """
-        The decorated function has the same signature and metadata as the original.
-        This may be important for certain coding tools (e.g., IDE autocompletion).
+        The decorated function has the same signature and metadata
+        as the original. This may be important for certain coding tools
+        (e.g., IDE autocompletion).
         """
 
         def original(a, b=1, *, c=2):
