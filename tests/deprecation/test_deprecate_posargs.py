@@ -111,6 +111,15 @@ class DeprecatePosargsTests(SimpleTestCase):
             ):
                 func(0, 10, 20, b=12, c=22)
 
+        with self.subTest("No false positives for valid kwargs"):
+            # Deprecation warning for 'b', not TypeError for duplicate 'c'.
+            with self.assertWarnsMessage(
+                RemovedAfterNextVersionWarning,
+                "Passing positional argument(s) 'b' to func() is deprecated.",
+            ):
+                result = func(0, 11, c=22)
+            self.assertEqual(result, (0, 11, 22))
+
     def test_detects_extra_positional_arguments(self):
         @deprecate_posargs(RemovedAfterNextVersionWarning, ["b"])
         def func(a, *, b=1):

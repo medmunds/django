@@ -225,7 +225,9 @@ def deprecate_posargs(deprecation_warning, remappable_names, /):
                 )
 
             # Do the remapping.
-            remapped_kwargs = dict(zip(remapped_names, args[num_positional_params:]))
+            remapped_kwargs = dict(
+                zip(remapped_names, args[num_positional_params:], strict=True)
+            )
             remaining_args = args[:num_positional_params]
             updated_kwargs = kwargs | remapped_kwargs
 
