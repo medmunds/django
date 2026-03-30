@@ -12,10 +12,9 @@ from unittest import mock, skipUnless
 
 from django.core import mail
 from django.core.mail import EmailMessage
-from django.core.mail.backends import dummy, filebased, locmem, smtp
+from django.core.mail.backends import console, dummy, filebased, locmem, smtp
 from django.core.mail.backends.base import BaseEmailBackend
 from django.test import SimpleTestCase, override_settings
-from django.utils.module_loading import import_string
 
 from .tests import MailTestsMixin, message_from_bytes
 
@@ -45,10 +44,23 @@ class BaseEmailBackendTests(SimpleTestCase):
 class SharedEmailBackendTests(MailTestsMixin):
     """Common test cases run against each EmailBackend."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.enterClassContext(override_settings(EMAIL_BACKEND=cls.email_backend))
-        super().setUpClass()
+    # Subclasses must set to the EmailBackend class being tested.
+    backend_class = None
+
+    # Subclasses should add any initialization arguments needed for an instance
+    # of the backend class to work in this test context (with flush_mailbox()
+    # and get_mailbox_content(), and without any external dependencies).
+    backend_test_kwargs = {}
+
+    def create_backend(self, **extra_kwargs):
+        if self.backend_class is None:
+            raise NotImplementedError(
+                "subclasses of SharedEmailBackendTests must provide a "
+                "backend_class attribute"
+            )
+
+        kwargs = self.backend_test_kwargs | extra_kwargs
+        return self.backend_class(**kwargs)
 
     def get_mailbox_content(self):
         raise NotImplementedError(
@@ -76,7 +88,7 @@ class SharedEmailBackendTests(MailTestsMixin):
         email = EmailMessage(
             "Subject", "Content\n", "from@example.com", ["to@example.com"]
         )
-        num_sent = mail.get_connection().send_messages([email])
+        num_sent = self.create_backend().send_messages([email])
         self.assertEqual(num_sent, 1)
         message = self.get_the_message()
         self.assertEqual(message["subject"], "Subject")
@@ -91,7 +103,7 @@ class SharedEmailBackendTests(MailTestsMixin):
             "from@example.com",
             ["to@example.com"],
         )
-        num_sent = mail.get_connection().send_messages([email])
+        num_sent = self.create_backend().send_messages([email])
         self.assertEqual(num_sent, 1)
         message = self.get_the_message()
         self.assertEqual(message["subject"], "Chère maman")
@@ -104,7 +116,7 @@ class SharedEmailBackendTests(MailTestsMixin):
         emails_lists = ([email1, email2], iter((email1, email2)))
         for emails_list in emails_lists:
             with self.subTest(emails_list=repr(emails_list)):
-                num_sent = mail.get_connection().send_messages(emails_list)
+                num_sent = self.create_backend().send_messages(emails_list)
                 self.assertEqual(num_sent, 2)
                 messages = self.get_mailbox_content()
                 self.assertEqual(len(messages), 2)
@@ -116,14 +128,14 @@ class SharedEmailBackendTests(MailTestsMixin):
         """
         Connection can be closed (even when not explicitly opened)
         """
-        backend = mail.get_connection()
+        backend = self.create_backend()
         backend.close()
 
     def test_use_as_contextmanager(self):
         """
-        The connection can be used as a contextmanager.
+        The backend instance can be used as a contextmanager.
         """
-        backend = mail.get_connection()
+        backend = self.create_backend()
         backend.open = mock.Mock()
         backend.close = mock.Mock()
 
@@ -135,20 +147,18 @@ class SharedEmailBackendTests(MailTestsMixin):
         backend.close.assert_called_once()
 
     def test_fail_silently_arg_accepted(self):
-        backend_class = import_string(self.email_backend)
         for value in [True, False]:
             with self.subTest(fail_silently=value):
-                backend = backend_class(fail_silently=value)
+                backend = self.create_backend(fail_silently=value)
                 self.assertIs(backend.fail_silently, value)
 
     def test_unknown_kwargs_ignored(self):
-        backend_class = import_string(self.email_backend)
-        backend = backend_class(unknown_kwarg="foo")
+        backend = self.create_backend(unknown_kwarg="foo")
         self.assertFalse(hasattr(backend, "unknown_kwarg"))
 
 
 class DummyBackendTests(SharedEmailBackendTests, SimpleTestCase):
-    email_backend = "django.core.mail.backends.dummy.EmailBackend"
+    backend_class = dummy.EmailBackend
 
     def get_mailbox_content(self):
         # Shared tests that examine the content of sent messages are not
@@ -160,13 +170,13 @@ class DummyBackendTests(SharedEmailBackendTests, SimpleTestCase):
         pass
 
     def test_send_messages_returns_sent_count(self):
-        backend = dummy.EmailBackend()
+        backend = self.create_backend()
         email = EmailMessage(to=["to@example.com"])
         self.assertEqual(backend.send_messages([email, email, email]), 3)
 
 
 class LocmemBackendTests(SharedEmailBackendTests, SimpleTestCase):
-    email_backend = "django.core.mail.backends.locmem.EmailBackend"
+    backend_class = locmem.EmailBackend
 
     def get_mailbox_content(self):
         return [m.message() for m in mail.outbox]
@@ -182,8 +192,8 @@ class LocmemBackendTests(SharedEmailBackendTests, SimpleTestCase):
         """
         Make sure that the locmem backend populates the outbox.
         """
-        backend1 = locmem.EmailBackend()
-        backend2 = locmem.EmailBackend()
+        backend1 = self.create_backend()
+        backend2 = self.create_backend()
         email = EmailMessage(to=["to@example.com"])
         backend1.send_messages([email])
         backend2.send_messages([email])
@@ -193,7 +203,7 @@ class LocmemBackendTests(SharedEmailBackendTests, SimpleTestCase):
         # Headers are validated when using the locmem backend (#18861).
         # (See also EmailMessageTests.test_header_injection().)
         email = EmailMessage(subject="Subject\nMultiline", to=["to@example.com"])
-        backend = locmem.EmailBackend()
+        backend = self.create_backend()
         with self.assertRaises(ValueError):
             backend.send_messages([email])
 
@@ -202,7 +212,7 @@ class LocmemBackendTests(SharedEmailBackendTests, SimpleTestCase):
             subject="correct subject",
             to=["to@example.com"],
         )
-        backend = locmem.EmailBackend()
+        backend = self.create_backend()
         backend.send_messages([email])
         email.subject = "other subject"
         email.to.append("other@example.com")
@@ -211,15 +221,13 @@ class LocmemBackendTests(SharedEmailBackendTests, SimpleTestCase):
 
 
 class FileBackendTests(SharedEmailBackendTests, SimpleTestCase):
-    email_backend = "django.core.mail.backends.filebased.EmailBackend"
+    backend_class = filebased.EmailBackend
 
     def setUp(self):
         super().setUp()
         self.tmp_dir = self.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp_dir)
-        _settings_override = override_settings(EMAIL_FILE_PATH=self.tmp_dir)
-        _settings_override.enable()
-        self.addCleanup(_settings_override.disable)
+        self.backend_test_kwargs = {"file_path": self.tmp_dir}
 
     def mkdtemp(self):
         return tempfile.mkdtemp()
@@ -269,17 +277,17 @@ class FileBackendTests(SharedEmailBackendTests, SimpleTestCase):
         email = EmailMessage(to=["to@example.com"])
         self.assertEqual(len(self.get_filenames()), 0)
 
-        connection1 = mail.get_connection()
-        connection1.send_messages([email])
+        backend1 = self.create_backend()
+        backend1.send_messages([email])
         self.assertEqual(len(self.get_filenames()), 1)
 
-        connection2 = mail.get_connection()
-        connection2.send_messages([email])
+        backend2 = self.create_backend()
+        backend2.send_messages([email])
         self.assertEqual(len(self.get_filenames()), 2)
 
     def test_multiple_messages_same_connection_single_file_reused(self):
         self.assertEqual(len(self.get_filenames()), 0)
-        backend = mail.get_connection()
+        backend = self.create_backend()
 
         self.assertIs(backend.open(), True)
         backend.send_messages([EmailMessage(to=["one@example.com"])])
@@ -301,7 +309,7 @@ class FileBackendTests(SharedEmailBackendTests, SimpleTestCase):
     def test_reopening_connection_uses_same_file(self):
         self.assertEqual(len(self.get_filenames()), 0)
 
-        backend = mail.get_connection()
+        backend = self.create_backend()
         self.assertIs(backend.open(), True)
         backend.send_messages([EmailMessage(to=["one@example.com"])])
         backend.close()
@@ -332,7 +340,7 @@ class FileBackendPathLibTests(FileBackendTests):
 
 
 class ConsoleBackendTests(SharedEmailBackendTests, SimpleTestCase):
-    email_backend = "django.core.mail.backends.console.EmailBackend"
+    backend_class = console.EmailBackend
 
     def setUp(self):
         super().setUp()
@@ -357,9 +365,7 @@ class ConsoleBackendTests(SharedEmailBackendTests, SimpleTestCase):
         The console backend can be pointed at an arbitrary stream.
         """
         s = StringIO()
-        backend = mail.get_connection(
-            "django.core.mail.backends.console.EmailBackend", stream=s
-        )
+        backend = self.create_backend(stream=s)
         backend.send_messages([EmailMessage(to=["to@example.com"])])
         message = s.getvalue().split("\n" + ("-" * 79) + "\n")[0].encode()
         self.assertMessageHasHeaders(
@@ -417,12 +423,6 @@ class SMTPBackendTestsBase(SimpleTestCase):
             hostname="127.0.0.1",
             port=port,
         )
-        cls._settings_override = override_settings(
-            EMAIL_HOST=cls.smtp_controller.hostname,
-            EMAIL_PORT=cls.smtp_controller.port,
-        )
-        cls._settings_override.enable()
-        cls.addClassCleanup(cls._settings_override.disable)
         cls.smtp_controller.start()
         cls.addClassCleanup(cls.stop_smtp)
 
@@ -433,10 +433,14 @@ class SMTPBackendTestsBase(SimpleTestCase):
 
 @skipUnless(HAS_AIOSMTPD, "No aiosmtpd library detected.")
 class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
-    email_backend = "django.core.mail.backends.smtp.EmailBackend"
+    backend_class = smtp.EmailBackend
 
     def setUp(self):
         super().setUp()
+        self.backend_test_kwargs = {
+            "host": self.smtp_controller.hostname,
+            "port": self.smtp_controller.port,
+        }
         self.smtp_handler.flush_mailbox()
         self.addCleanup(self.smtp_handler.flush_mailbox)
 
@@ -468,7 +472,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertEqual(backend.port, 5322)
 
     def test_smtp_connection_uses_host_and_port(self):
-        backend = smtp.EmailBackend(host="mail.example.com", port=5322)
+        backend = self.create_backend(host="mail.example.com", port=5322)
         self.assertEqual(backend.host, "mail.example.com")
         self.assertEqual(backend.port, 5322)
         with (
@@ -513,7 +517,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         Opening the backend with non empty username/password tries
         to authenticate against the SMTP server.
         """
-        backend = smtp.EmailBackend(
+        backend = self.create_backend(
             username="not empty username", password="not empty password"
         )
         with mock.patch("smtplib.SMTP.login") as mock_smtp_login, backend:
@@ -528,14 +532,14 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         """
         open() returns whether it opened a connection.
         """
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         self.assertIsNone(backend.connection)
         opened = backend.open()
         backend.close()
         self.assertIs(opened, True)
 
     def test_reopen_connection(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         # Simulate an already open connection.
         backend.connection = mock.Mock(spec=object())
         self.assertIs(backend.open(), False)
@@ -551,7 +555,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertIs(backend.use_tls, False)
 
     def test_email_tls_default_disabled(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         self.assertIs(backend.use_tls, False)
 
     def test_ssl_tls_mutually_exclusive(self):
@@ -560,7 +564,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
             "one of those settings to True."
         )
         with self.assertRaisesMessage(ValueError, msg):
-            smtp.EmailBackend(use_ssl=True, use_tls=True)
+            self.create_backend(use_ssl=True, use_tls=True)
 
     @override_settings(EMAIL_USE_SSL=True)
     def test_email_ssl_use_settings(self):
@@ -573,7 +577,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertIs(backend.use_ssl, False)
 
     def test_email_ssl_default_disabled(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         self.assertIs(backend.use_ssl, False)
 
     @override_settings(EMAIL_SSL_CERTFILE="foo")
@@ -587,7 +591,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertEqual(backend.ssl_certfile, "bar")
 
     def test_email_ssl_certfile_default_disabled(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         self.assertIsNone(backend.ssl_certfile)
 
     @override_settings(EMAIL_SSL_KEYFILE="foo")
@@ -601,11 +605,11 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertEqual(backend.ssl_keyfile, "bar")
 
     def test_email_ssl_keyfile_default_disabled(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         self.assertIsNone(backend.ssl_keyfile)
 
     def test_ssl_context_uses_ssl_certfile_and_keyfile(self):
-        backend = smtp.EmailBackend(ssl_certfile="certfile", ssl_keyfile="keyfile")
+        backend = self.create_backend(ssl_certfile="certfile", ssl_keyfile="keyfile")
         with mock.patch(
             "django.core.mail.backends.smtp.ssl.SSLContext"
         ) as mock_ssl_context:
@@ -614,9 +618,8 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         mock_ssl_context.assert_called_once_with(protocol=ssl.PROTOCOL_TLS_CLIENT)
         ssl_context.load_cert_chain.assert_called_once_with("certfile", "keyfile")
 
-    @override_settings(EMAIL_USE_TLS=True)
     def test_email_tls_attempts_starttls(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend(use_tls=True)
         self.assertIs(backend.use_tls, True)
         with self.assertRaisesMessage(
             SMTPException, "STARTTLS extension not supported by server."
@@ -624,9 +627,8 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
             with backend:
                 pass
 
-    @override_settings(EMAIL_USE_SSL=True)
     def test_email_ssl_attempts_ssl_connection(self):
-        backend = smtp.EmailBackend()
+        backend = self.create_backend(use_ssl=True)
         self.assertIs(backend.use_ssl, True)
         with self.assertRaises(SSLError):
             with backend:
@@ -634,7 +636,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
 
     def test_connection_timeout_default(self):
         """The backend's timeout value is None by default."""
-        backend = mail.get_connection("django.core.mail.backends.smtp.EmailBackend")
+        backend = self.create_backend()
         self.assertIsNone(backend.timeout)
 
     def test_connection_timeout_custom(self):
@@ -645,7 +647,9 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
                 kwargs.setdefault("timeout", 42)
                 super().__init__(*args, **kwargs)
 
-        myemailbackend = MyEmailBackend()
+        myemailbackend = MyEmailBackend(
+            host=self.smtp_controller.hostname, port=self.smtp_controller.port
+        )
         myemailbackend.open()
         self.assertEqual(myemailbackend.timeout, 42)
         self.assertEqual(myemailbackend.connection.timeout, 42)
@@ -662,12 +666,12 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertEqual(backend.timeout, 15)
 
     def test_smtp_connection_uses_timeout(self):
-        backend = smtp.EmailBackend(timeout=10)
+        backend = self.create_backend(timeout=10)
         with backend:
             self.assertEqual(backend.connection.timeout, 10)
 
     def test_serialized_message_uses_crlf_line_ending(self):
-        backend = mail.get_connection()
+        backend = self.create_backend()
         with (
             backend,
             mock.patch.object(backend.connection, "sendmail") as mock_sendmail,
@@ -688,7 +692,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         send_messages() shouldn't try to send messages if open() raises an
         exception after initializing the connection.
         """
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         # Simulate connection initialization success and a subsequent
         # connection exception.
         backend.connection = mock.Mock()
@@ -701,14 +705,14 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         send_messages() shouldn't even try to open the connection if there are
         no messages to send.
         """
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         backend.open = mock.Mock()
         self.assertEqual(backend.send_messages([]), 0)
         backend.open.assert_not_called()
 
     def test_send_messages_zero_sent(self):
         """A message isn't sent if it doesn't have any recipients."""
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         backend.connection = mock.Mock()
         email = EmailMessage("Subject", "Content", "from@example.com", to=[])
         sent = backend.send_messages([email])
@@ -721,7 +725,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         EmailMessage.all_recipients() (which is distinct from message header
         fields).
         """
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         backend.connection = mock.Mock()
         for email_address in (
             # Invalid address with two @ signs.
@@ -760,7 +764,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
                 "To": "Discussão Django <django@discussão.example.org>",
             },
         )
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         backend.send_messages([email])
         envelope = self.get_smtp_envelopes()[0]
         self.assertEqual(envelope["mail_from"], "lists@xn--discusso-xza.example.org")
@@ -785,7 +789,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
             cc=['"ශ්‍රී" <cc@xn--nxasmm1c.example.com>'],
             bcc=['"نامه‌ای." <bcc@xn--mgba3gch31f060k.example.com>'],
         )
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         backend.send_messages([email])
         envelope = self.get_smtp_envelopes()[0]
         self.assertEqual(envelope["mail_from"], "from@xn--fa-hia.example.com")
@@ -803,7 +807,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         The SMTP EmailBackend does not currently support non-ASCII local-parts.
         (That would require using the RFC 6532 SMTPUTF8 extension.) #35713.
         """
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         backend.connection = mock.Mock(spec=object())
         email = EmailMessage(to=["nø@example.dk"])
         with self.assertRaisesMessage(
@@ -815,7 +819,7 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
     def test_prep_address_without_force_ascii(self):
         # A subclass implementing SMTPUTF8 could use
         # prep_address(force_ascii=False).
-        backend = smtp.EmailBackend()
+        backend = self.create_backend()
         for case in ["åh@example.dk", "oh@åh.example.dk", "åh@åh.example.dk"]:
             with self.subTest(case=case):
                 self.assertEqual(backend.prep_address(case, force_ascii=False), case)
@@ -826,7 +830,9 @@ class SMTPBackendStoppedServerTests(SMTPBackendTestsBase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.backend = smtp.EmailBackend()
+        cls.backend = smtp.EmailBackend(
+            host=cls.smtp_controller.hostname, port=cls.smtp_controller.port
+        )
         cls.smtp_controller.stop()
 
     @classmethod
