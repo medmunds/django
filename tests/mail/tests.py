@@ -1897,7 +1897,9 @@ class SendMailTests(SimpleTestCase, MailTestsMixin):
 
     def test_connection_arg(self):
         # Send using non-default connection.
-        connection = mail.get_connection("mail.custombackend.EmailBackend")
+        from .custombackend import EmailBackend
+
+        connection = EmailBackend()
         send_mail(
             "Subject",
             "Content",
@@ -1995,7 +1997,9 @@ class SendMassMailTests(SimpleTestCase):
 
     def test_connection_arg(self):
         # Send using non-default connection.
-        connection = mail.get_connection("mail.custombackend.EmailBackend")
+        from .custombackend import EmailBackend
+
+        connection = EmailBackend()
         send_mass_mail(
             [
                 ("Subject1", "Content1", "from1@example.com", ["to1@example.com"]),
@@ -2202,7 +2206,9 @@ class MailAdminsAndManagersTests(SimpleTestCase, MailTestsMixin):
     @override_settings(ADMINS=["nobody@example.com"])
     def test_connection_arg_mail_admins(self):
         # Send using non-default connection.
-        connection = mail.get_connection("mail.custombackend.EmailBackend")
+        from .custombackend import EmailBackend
+
+        connection = EmailBackend()
         mail_admins("Admin message", "Content", connection=connection)
         self.assertEqual(mail.outbox, [])
         self.assertEqual(len(connection.test_outbox), 1)
@@ -2211,7 +2217,9 @@ class MailAdminsAndManagersTests(SimpleTestCase, MailTestsMixin):
     @override_settings(MANAGERS=["nobody@example.com"])
     def test_connection_arg_mail_managers(self):
         # Send using non-default connection.
-        connection = mail.get_connection("mail.custombackend.EmailBackend")
+        from .custombackend import EmailBackend
+
+        connection = EmailBackend()
         mail_managers("Manager message", "Content", connection=connection)
         self.assertEqual(mail.outbox, [])
         self.assertEqual(len(connection.test_outbox), 1)
