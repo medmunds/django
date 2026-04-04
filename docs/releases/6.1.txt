@@ -86,6 +86,62 @@ Python-level options, as Django does not need to load objects before deleting
 them. As a consequence, the :attr:`~django.db.models.DB_CASCADE` option does
 not trigger the ``pre_delete`` or ``post_delete`` signals.
 
+Email providers
+---------------
+
+The new :setting:`EMAIL_PROVIDERS` setting supports configuring multiple email
+provider backends with different options, similar to existing mechanisms for
+:setting:`CACHES`, :setting:`DATABASES`, :setting:`STORAGES`, and
+:setting:`TASKS`.
+
+You can select an email provider with the new ``using`` argument to :ref:`email
+sending <topic-email-sending>` functions, or obtain an email backend instance
+with :data:`mail.providers[alias] <django.core.mail.providers>`. See
+:doc:`/topics/email` for more details.
+
+:setting:`EMAIL_PROVIDERS` is not yet enabled by default in existing projects.
+It will replace :setting:`EMAIL_BACKEND` and several related ``EMAIL_*``
+settings in Django 7.0. Until then, the older settings will continue to work
+but will issue deprecation warnings: see the list of :ref:`email deprecations
+<email-providers-deprecations>` below.
+
+You can opt into the new features at any time before Django 7.0 using the
+migration guide that follows. To ease the transition,
+:data:`mail.providers["default"] <django.core.mail.providers.default>` works
+with either :setting:`!EMAIL_PROVIDERS` or the deprecated
+:setting:`EMAIL_BACKEND` setting defined, and the deprecated
+:func:`~django.core.mail.get_connection` function will return an instance of
+the default email provider when :setting:`EMAIL_PROVIDERS` is defined.
+
+.. _migrating-to-email-providers:
+
+Migrating to email providers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**TODO:** Migration guide. Rough outline follows:
+
+Most users:
+
+*   Verify readiness of any third-party email packages (some deprecation
+    warnings become hard errors when ``EMAIL_PROVIDERS`` is defined)
+*   Replace :setting:`EMAIL_BACKEND` and other deprecated ``EMAIL_*`` settings
+    with :setting:`EMAIL_PROVIDERS`
+
+Less common situations:
+
+*   Replace :func:`~django.core.mail.get_connection` and ``connection`` args
+*   Replace ``fail_silently`` (and ``auth_user``, ``auth_password``)
+*   Change ``email_backend`` to ``using`` in ``AdminEmailHandler`` and
+    ``BrokenLinksEmailMiddleware`` options
+
+If you have a custom email backend:
+
+*   Use keyword args for configuration; consume all ``**kwargs`` you use and
+    pass the remainder to superclass init (including ``alias``)
+*   For third-party backends and other reusable libraries that work with email:
+    ... . (Can we link to some external guide here? Maybe something in the DEP?
+    This is a potentially long topic.)
+
 Minor features
 --------------
 
@@ -494,6 +550,14 @@ Email
   instances directly or to ``super().__init__(...)`` calls in custom email
   backend subclasses.
 
+* The undocumented ``EmailMessage.get_connection()`` method is no longer used.
+  Defining it in a subclass or trying to call it now causes an error.
+
+* :meth:`EmailMessage.send() <django.core.mail.EmailMessage.send>` no longer
+  sets the ``connection`` property on the ``EmailMessage``. (This behavior was
+  never documented. The ``send()`` method will still *use* a ``connection``
+  that is set on the message before sending.)
+
 Miscellaneous
 -------------
 
@@ -516,8 +580,12 @@ Miscellaneous
 Features deprecated in 6.1
 ==========================
 
+.. _email-providers-deprecations:
+
 Email
 -----
+
+* (More email-related deprecations coming in future commits.)
 
 * The ``BaseEmailBackend.__init__()`` constructor no longer silently ignores
   unknown keyword arguments. Custom email backend subclasses should ensure they
