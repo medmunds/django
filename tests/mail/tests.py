@@ -1821,7 +1821,7 @@ class EmailMessageTests(MailTestsMixin, SimpleTestCase):
         )
 
     def test_send_fail_silently_conflict(self):
-        email = mail.EmailMessage(
+        email = EmailMessage(
             "Subject",
             "Body",
             "from@example.com",
@@ -1936,7 +1936,7 @@ class SendMailTests(SimpleTestCase, MailTestsMixin):
             "Pass fail_silently to get_connection() instead."
         )
         with self.assertRaisesMessage(TypeError, msg):
-            mail.send_mail(
+            send_mail(
                 "Subject",
                 "Body",
                 "from@example.com",
@@ -1955,7 +1955,7 @@ class SendMailTests(SimpleTestCase, MailTestsMixin):
                 self.subTest(param=param),
                 self.assertRaisesMessage(TypeError, msg),
             ):
-                mail.send_mail(
+                send_mail(
                     "subject",
                     "body",
                     "from@example.com",
@@ -2033,7 +2033,7 @@ class SendMassMailTests(SimpleTestCase):
             "Pass fail_silently to get_connection() instead."
         )
         with self.assertRaisesMessage(TypeError, msg):
-            mail.send_mass_mail(
+            send_mass_mail(
                 datatuple, fail_silently=True, connection=mail.get_connection()
             )
 
@@ -2048,7 +2048,7 @@ class SendMassMailTests(SimpleTestCase):
                 self.subTest(param=param),
                 self.assertRaisesMessage(TypeError, msg),
             ):
-                mail.send_mass_mail(
+                send_mass_mail(
                     datatuple, **{param: "value"}, connection=mail.get_connection()
                 )
 
@@ -2223,7 +2223,7 @@ class MailAdminsAndManagersTests(SimpleTestCase, MailTestsMixin):
             "Pass fail_silently to get_connection() instead."
         )
         with self.assertRaisesMessage(TypeError, msg):
-            mail.mail_admins(
+            mail_admins(
                 "Subject",
                 "Message",
                 fail_silently=True,
@@ -2236,7 +2236,7 @@ class MailAdminsAndManagersTests(SimpleTestCase, MailTestsMixin):
             "Pass fail_silently to get_connection() instead."
         )
         with self.assertRaisesMessage(TypeError, msg):
-            mail.mail_managers(
+            mail_managers(
                 "Subject",
                 "Message",
                 fail_silently=True,
