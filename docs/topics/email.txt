@@ -5,10 +5,11 @@ Sending email
 .. module:: django.core.mail
    :synopsis: Helpers to easily send email.
 
-Although Python provides a mail sending interface via the :mod:`smtplib`
-module, Django provides a couple of light wrappers over it. These wrappers are
-provided to make sending email extra quick, to help test email sending during
-development, and to provide support for platforms that can't use SMTP.
+Django provides wrappers for Python's :mod:`email` and :mod:`smtplib` modules
+to simplify composing and sending email. Django's email framework also supports
+swapping in different delivery mechanisms: you can direct email to the console
+or a file during development, or use community-maintained solutions for sending
+email directly through commercial email service providers.
 
 The code lives in the ``django.core.mail`` module.
 
@@ -27,10 +28,11 @@ plain text message::
         ["to@example.com"],
     )
 
-When additional email sending functionality is needed, use
-:class:`EmailMessage` or :class:`EmailMultiAlternatives`. For example, to send
-a multipart email that includes both HTML and plain text versions with a
-specific template and custom headers, you can use the following approach::
+When additional email sending functionality is needed, use the
+:ref:`EmailMessage <topic-email-message>` or :class:`EmailMultiAlternatives`
+class. For example, to send a multipart email that includes both HTML and plain
+text versions with a specific template and custom headers, you can use the
+following approach::
 
     from django.core.mail import EmailMultiAlternatives
     from django.template.loader import render_to_string
@@ -112,9 +114,12 @@ attachments and multiple content types.
 ``send_mail()``
 ---------------
 
+For many common cases, you can send email using
+``django.core.mail.send_mail()``.
+
 .. function:: send_mail(subject, message, from_email, recipient_list, *, fail_silently=False, auth_user=None, auth_password=None, connection=None, html_message=None)
 
-In most cases, you can send email using ``django.core.mail.send_mail()``.
+Sends a single email message.
 
 The ``subject``, ``message``, ``from_email`` and ``recipient_list`` parameters
 are required.
@@ -294,6 +299,7 @@ setting.
     was also provided. This now raises a ``TypeError``.
 
 .. _emailmessage-and-smtpconnection:
+.. _topic-email-message:
 
 The ``EmailMessage`` class
 --------------------------
@@ -968,7 +974,7 @@ The :ref:`file <topic-email-file-backend>` email backend can also be useful
 during development -- this backend dumps the contents of every SMTP connection
 to a file that can be inspected at your leisure.
 
-Another approach is to use a "dumb" SMTP server that receives the emails
+Another approach is to use a mocked SMTP server that receives the emails
 locally and displays them to the terminal, but does not actually send
 anything. The :pypi:`aiosmtpd` package provides a way to accomplish this:
 
