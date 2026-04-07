@@ -936,20 +936,20 @@ instance of the email backend that you can use.
 
 .. function:: get_connection(backend=None, *, fail_silently=False, **kwargs)
 
-By default, a call to ``get_connection()`` will return an instance of the
-email backend specified in :setting:`EMAIL_BACKEND`. If you specify the
-``backend`` argument, an instance of that backend will be instantiated.
+    By default, a call to ``get_connection()`` will return an instance of the
+    email backend specified in :setting:`EMAIL_BACKEND`. If you specify the
+    ``backend`` argument, an instance of that backend will be instantiated.
 
-The keyword-only ``fail_silently`` argument controls how the backend should
-handle errors. If ``fail_silently`` is True, exceptions during the email
-sending process will be silently ignored.
+    The keyword-only ``fail_silently`` argument controls how the backend should
+    handle errors. If ``fail_silently`` is True, exceptions during the email
+    sending process will be silently ignored.
 
-All other keyword arguments are passed directly to the constructor of the
-email backend.
+    All other keyword arguments are passed directly to the constructor of the
+    email backend.
 
-.. deprecated:: 6.0
+    .. deprecated:: 6.0
 
-    Passing ``fail_silently`` as positional argument is deprecated.
+        Passing ``fail_silently`` as positional argument is deprecated.
 
 Configuring email for development
 =================================
