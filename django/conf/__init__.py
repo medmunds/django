@@ -141,9 +141,11 @@ class LazySettings(LazyObject):
     def _show_deprecation_warning(self, message, category):
         stack = traceback.extract_stack()
         # Show a warning if the setting is used outside of Django.
-        # Stack index: -1 this line, -2 the property, -3 the
-        # LazyObject __getattribute__(), -4 the caller.
-        filename, _, _, _ = stack[-4]
+        # Find the closest stack frame not in this file.
+        filename = ""
+        level = len(stack) - 2
+        while (level >= 0 and (filename := stack[level][0])) == __file__:
+            level -= 1
         if not filename.startswith(os.path.dirname(django.__file__)):
             warnings.warn(message, category, stacklevel=2)
 
