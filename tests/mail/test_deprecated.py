@@ -1,6 +1,11 @@
 # RemovedInDjango70Warning: This entire file.
+import types
+import warnings
 from email.mime.text import MIMEText
+from unittest import mock
 
+from django.conf import LazySettings, settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import (
     EmailAlternative,
     EmailAttachment,
@@ -8,7 +13,7 @@ from django.core.mail import (
     EmailMultiAlternatives,
 )
 from django.core.mail.message import forbid_multi_line_headers, sanitize_address
-from django.test import SimpleTestCase, ignore_warnings
+from django.test import SimpleTestCase, ignore_warnings, override_settings
 from django.utils.deprecation import RemovedInDjango70Warning
 
 from .tests import MailTestsMixin
@@ -139,3 +144,225 @@ class DeprecatedCompatibilityTests(SimpleTestCase):
         msg = EmailMessage(attachments=[txt])
         payload = msg.message().get_payload()
         self.assertEqual(payload[0], txt)
+
+
+class DeprecatedEmailSettingsTests(SimpleTestCase):
+    """
+    Deprecation warnings and compatibility errors related to EMAIL_PROVIDERS.
+    """
+
+    DEPRECATED_SETTING_DEFAULTS = {
+        "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+        "EMAIL_HOST": "localhost",
+        "EMAIL_PORT": 25,
+        "EMAIL_HOST_USER": "",
+        "EMAIL_HOST_PASSWORD": "",
+        "EMAIL_USE_TLS": False,
+        "EMAIL_USE_SSL": False,
+        "EMAIL_SSL_CERTFILE": None,
+        "EMAIL_SSL_KEYFILE": None,
+        "EMAIL_TIMEOUT": None,
+        # EMAIL_FILE_PATH does not have a default.
+    }
+
+    DEPRECATED_SETTINGS = DEPRECATED_SETTING_DEFAULTS.keys() | {"EMAIL_FILE_PATH"}
+
+    def init_settings(self):
+        """Simulate fresh initialization of django.conf.settings."""
+        settings = LazySettings()
+        getattr(settings, "FOO", None)  # Trigger _setup().
+        return settings
+
+    def mock_settings_module(self, **settings):
+        """
+        Create an in-memory settings "module" that will be read by the next
+        Settings.__init__() (or LazySettings._setup()). (This does not affect
+        django.conf.settings if it has already been initialized.)
+        """
+        settings_module = types.ModuleType("mocked_settings")
+        for name, value in settings.items():
+            setattr(settings_module, name, value)
+        return mock.patch(
+            "django.conf.importlib.import_module",
+            autospec=True,
+            return_value=settings_module,
+        )
+
+    def test_warn_when_defining_deprecated_settings(self):
+        """Warn on init if deprecated settings are defined."""
+        for name in self.DEPRECATED_SETTINGS:
+            msg = (
+                f"The {name} setting is deprecated. Migrate to "
+                "EMAIL_PROVIDERS before Django 7.0."
+            )
+            settings = {name: "foo"}
+            with self.subTest(name=name):
+                with (
+                    self.subTest("settings module"),
+                    self.mock_settings_module(**settings),
+                    self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+                ):
+                    self.init_settings()
+                with (
+                    self.subTest("settings.configure()"),
+                    self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+                ):
+                    LazySettings().configure(**settings)
+
+        # Multiple deprecated settings are reported all at once.
+        with self.subTest("multiple settings"):
+            msg = (
+                "The EMAIL_BACKEND, EMAIL_HOST settings are deprecated. "
+                "Migrate to EMAIL_PROVIDERS before Django 7.0."
+            )
+            settings = {"EMAIL_BACKEND": "foo", "EMAIL_HOST": "bar"}
+            with (
+                self.subTest("settings module"),
+                self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+                self.mock_settings_module(**settings),
+            ):
+                self.init_settings()
+            with (
+                self.subTest("settings.configure()"),
+                self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+            ):
+                LazySettings().configure(**settings)
+
+    def test_warn_email_providers_will_be_empty(self):
+        """
+        If no email-related settings are defined, warn that EMAIL_PROVIDERS
+        will be needed in Django 7.0.
+        """
+        msg = (
+            "Django 7.0 will not have a default email provider. "
+            "Define EMAIL_PROVIDERS in your settings to configure email."
+        )
+        with (
+            self.subTest("settings module"),
+            self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+        ):
+            self.init_settings()
+
+        with (
+            self.subTest("settings.configure()"),
+            self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+        ):
+            LazySettings().configure()
+
+    def test_no_warning_if_any_email_setting_defined(self):
+        """
+        The warning from the previous test is _not_ emitted when either
+        EMAIL_PROVIDERS or a deprecated setting is defined.
+        """
+        msg = "Django 7.0 will not have a default email provider."
+        for name in self.DEPRECATED_SETTINGS | {"EMAIL_PROVIDERS"}:
+            with (
+                self.subTest(name=name),
+                self.mock_settings_module(**{name: "foo"}),
+                # Use catch_warnings() to implement the equivalent of:
+                #   self.assertNotWarnsMessage(msg, RemovedInDjango70Warning)
+                warnings.catch_warnings(
+                    category=RemovedInDjango70Warning, record=True
+                ) as caught_warnings,
+            ):
+                # runtests.py filters this exact warning (to avoid it breaking
+                # all tests). Undo that filter.
+                warnings.simplefilter("always", category=RemovedInDjango70Warning)
+
+                self.init_settings()
+
+                warning_messages = [str(w.message) for w in caught_warnings or []]
+                found = any(msg in w for w in warning_messages)
+                self.assertFalse(found, f"{msg!r} was found in {warning_messages!r}.")
+
+    def test_error_on_conflicting_settings(self):
+        """EMAIL_PROVIDERS conflicts with deprecated email settings."""
+        for name in self.DEPRECATED_SETTINGS:
+            msg = (
+                f"The deprecated {name} setting is not allowed when "
+                "EMAIL_PROVIDERS is defined."
+            )
+            settings = {name: "foo", "EMAIL_PROVIDERS": {}}
+            with self.subTest(name=name):
+                with (
+                    self.subTest("settings module"),
+                    self.mock_settings_module(**settings),
+                    self.assertRaisesMessage(ImproperlyConfigured, msg),
+                ):
+                    self.init_settings()
+                with (
+                    self.subTest("settings.configure()"),
+                    self.assertRaisesMessage(ImproperlyConfigured, msg),
+                ):
+                    LazySettings().configure(**settings)
+
+        # Multiple incompatible settings are reported all at once.
+        with self.subTest("multiple settings"):
+            msg = (
+                "The deprecated EMAIL_BACKEND, EMAIL_HOST settings are not "
+                "allowed when EMAIL_PROVIDERS is defined."
+            )
+            settings = {
+                "EMAIL_BACKEND": "foo",
+                "EMAIL_HOST": "bar",
+                "EMAIL_PROVIDERS": {},
+            }
+            with (
+                self.subTest("settings module"),
+                self.assertRaisesMessage(ImproperlyConfigured, msg),
+                self.mock_settings_module(**settings),
+            ):
+                self.init_settings()
+            with (
+                self.subTest("settings.configure()"),
+                self.assertRaisesMessage(ImproperlyConfigured, msg),
+            ):
+                LazySettings().configure(**settings)
+
+    def test_warning_on_access(self):
+        """Warn when trying to use any deprecated setting."""
+        for name in self.DEPRECATED_SETTINGS:
+            msg = (
+                f"The {name} setting is deprecated. Migrate to "
+                "EMAIL_PROVIDERS before Django 7.0."
+            )
+            with (
+                self.subTest(name=name),
+                override_settings(**{name: "foo"}),
+                self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+            ):
+                getattr(settings, name)
+
+    @ignore_warnings(category=RemovedInDjango70Warning)
+    def test_defaults_unchanged(self):
+        """Deprecated settings default values are unchanged."""
+        # Django's test runner overrides EMAIL_BACKEND in django.conf.settings,
+        # so construct a fresh settings object for this test.
+        settings = self.init_settings()
+        for name, expected in self.DEPRECATED_SETTING_DEFAULTS.items():
+            with self.subTest(name=name):
+                if expected is None:
+                    self.assertIsNone(getattr(settings, name))
+                else:
+                    self.assertEqual(getattr(settings, name), expected)
+
+    @ignore_warnings(category=RemovedInDjango70Warning)
+    def test_email_backend_override_during_tests(self):
+        self.assertEqual(
+            settings.EMAIL_BACKEND, "django.core.mail.backends.locmem.EmailBackend"
+        )
+
+    @override_settings(EMAIL_PROVIDERS={})
+    def test_error_on_conflicting_access(self):
+        """
+        Trying to access a deprecated setting becomes an error when
+        EMAIL_PROVIDERS is defined.
+        """
+        for name in self.DEPRECATED_SETTINGS:
+            msg = (
+                f"The {name} setting is not available when EMAIL_PROVIDERS "
+                "is defined."
+            )
+            with self.subTest(name=name), override_settings(**{name: "foo"}):
+                with self.assertRaisesMessage(AttributeError, msg):
+                    getattr(settings, name)

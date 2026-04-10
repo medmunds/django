@@ -585,7 +585,14 @@ Features deprecated in 6.1
 Email
 -----
 
-* (More email-related deprecations coming in future commits.)
+* The :setting:`EMAIL_BACKEND`, :setting:`EMAIL_FILE_PATH`,
+  :setting:`EMAIL_HOST`, :setting:`EMAIL_HOST_PASSWORD`,
+  :setting:`EMAIL_HOST_USER`, :setting:`EMAIL_PORT`,
+  :setting:`EMAIL_USE_TLS`, :setting:`EMAIL_USE_SSL`,
+  :setting:`EMAIL_SSL_CERTFILE`, :setting:`EMAIL_SSL_KEYFILE`, and
+  :setting:`EMAIL_TIMEOUT` settings are deprecated. Replace them with an
+  :setting:`EMAIL_PROVIDERS` configuration dictionary as described in
+  :ref:`migrating-to-email-providers`.
 
 * The ``BaseEmailBackend.__init__()`` constructor no longer silently ignores
   unknown keyword arguments. Custom email backend subclasses should ensure they

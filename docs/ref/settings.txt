@@ -1435,10 +1435,10 @@ See :ref:`topic-email-configuration` for more information.
 
     In Django 7.0, the default value will change to ``{}`` (no defined email
     providers). Until then, if ``EMAIL_PROVIDERS`` is not defined in the
-    settings, Django will create a ``"default"`` email provider from
-    :setting:`EMAIL_BACKEND`. Projects can opt into the Django 7.0 behavior
-    early by adding ``EMAIL_PROVIDERS`` and removing ``EMAIL_BACKEND``  from
-    their settings.
+    settings, Django will create a ``"default"`` email provider from the
+    deprecated :setting:`EMAIL_BACKEND` setting. Projects can opt into the
+    Django 7.0 behavior early by adding ``EMAIL_PROVIDERS`` and removing
+    ``EMAIL_BACKEND``  from their settings.
 
 .. setting:: EMAIL_PROVIDERS-BACKEND
 
@@ -1473,6 +1473,12 @@ Default: ``'``:class:`django.core.mail.backends.smtp.EmailBackend`\ ``'``
 The backend to use for sending emails. For the list of available backends see
 :ref:`topic-email-backends`.
 
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is :setting:`BACKEND <EMAIL_PROVIDERS-BACKEND>` in the
+    :setting:`EMAIL_PROVIDERS` ``"default"`` configuration.
+
 .. setting:: EMAIL_FILE_PATH
 
 ``EMAIL_FILE_PATH``
@@ -1482,6 +1488,13 @@ Default: Not defined
 
 The directory used by the :ref:`file email backend <topic-email-file-backend>`
 to store output files.
+
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"file_path"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the file email backend.
 
 .. setting:: EMAIL_HOST
 
@@ -1493,6 +1506,13 @@ Default: ``'localhost'``
 The host to use for sending email.
 
 See also :setting:`EMAIL_PORT`.
+
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"host"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
 
 .. setting:: EMAIL_HOST_PASSWORD
 
@@ -1508,6 +1528,13 @@ Django won't attempt authentication.
 
 See also :setting:`EMAIL_HOST_USER`.
 
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"password"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
+
 .. setting:: EMAIL_HOST_USER
 
 ``EMAIL_HOST_USER``
@@ -1520,6 +1547,13 @@ If empty, Django won't attempt authentication.
 
 See also :setting:`EMAIL_HOST_PASSWORD`.
 
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"username"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
+
 .. setting:: EMAIL_PORT
 
 ``EMAIL_PORT``
@@ -1528,6 +1562,13 @@ See also :setting:`EMAIL_HOST_PASSWORD`.
 Default: ``25``
 
 Port to use for the SMTP server defined in :setting:`EMAIL_HOST`.
+
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"port"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
 
 .. setting:: EMAIL_SUBJECT_PREFIX
 
@@ -1562,6 +1603,13 @@ This is used for explicit TLS connections, generally on port 587. If you are
 experiencing hanging connections, see the implicit TLS setting
 :setting:`EMAIL_USE_SSL`.
 
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"use_tls"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
+
 .. setting:: EMAIL_USE_SSL
 
 ``EMAIL_USE_SSL``
@@ -1576,6 +1624,13 @@ see the explicit TLS setting :setting:`EMAIL_USE_TLS`.
 
 Note that :setting:`EMAIL_USE_TLS`/:setting:`EMAIL_USE_SSL` are mutually
 exclusive, so only set one of those settings to ``True``.
+
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"use_ssl"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
 
 .. setting:: EMAIL_SSL_CERTFILE
 
@@ -1603,6 +1658,13 @@ For more complex scenarios, the SMTP
 root certificates to its ``ssl_context`` using
 :meth:`python:ssl.SSLContext.load_verify_locations`.
 
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"ssl_certfile"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
+
 .. setting:: EMAIL_SSL_KEYFILE
 
 ``EMAIL_SSL_KEYFILE``
@@ -1620,6 +1682,13 @@ They're passed to the underlying SSL connection. Please refer to the
 documentation of Python's :meth:`python:ssl.SSLContext.wrap_socket` function
 for details on how the certificate chain file and private key file are handled.
 
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"ssl_keyfile"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
+
 .. setting:: EMAIL_TIMEOUT
 
 ``EMAIL_TIMEOUT``
@@ -1629,6 +1698,13 @@ Default: ``None``
 
 Specifies a timeout in seconds for blocking operations like the connection
 attempt.
+
+.. deprecated:: 6.1
+
+    This setting is deprecated and will be removed in Django 7.0. Its
+    replacement is ``"timeout"`` under
+    :setting:`OPTIONS <EMAIL_PROVIDERS-OPTIONS>` in an
+    :setting:`EMAIL_PROVIDERS` definition that uses the SMTP email backend.
 
 .. setting:: FILE_UPLOAD_HANDLERS
 

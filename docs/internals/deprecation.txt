@@ -69,6 +69,11 @@ details on these changes.
 
 * The ``SQLCompiler.quote_name_unless_alias()`` method will be removed.
 
+* The ``EMAIL_BACKEND``, ``EMAIL_FILE_PATH``, ``EMAIL_HOST``,
+  ``EMAIL_HOST_PASSWORD``, ``EMAIL_HOST_USER``, ``EMAIL_PORT``,
+  ``EMAIL_USE_TLS``, ``EMAIL_USE_SSL``, ``EMAIL_SSL_CERTFILE``,
+  ``EMAIL_SSL_KEYFILE``, and ``EMAIL_TIMEOUT`` settings will be removed.
+
 * The ``BaseEmailBackend.__init__()`` method will raise errors for unknown
   keyword arguments.
 

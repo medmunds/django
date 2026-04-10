@@ -16,11 +16,55 @@ from pathlib import Path
 import django
 from django.conf import global_settings
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.deprecation import RemovedInDjango70Warning, django_file_prefixes
 from django.utils.functional import LazyObject, empty
 
 ENVIRONMENT_VARIABLE = "DJANGO_SETTINGS_MODULE"
 DEFAULT_STORAGE_ALIAS = "default"
 STATICFILES_STORAGE_ALIAS = "staticfiles"
+
+# RemovedInDjango70Warning.
+DEPRECATED_EMAIL_SETTINGS = {
+    "EMAIL_BACKEND",
+    "EMAIL_HOST",
+    "EMAIL_PORT",
+    "EMAIL_HOST_USER",
+    "EMAIL_HOST_PASSWORD",
+    "EMAIL_USE_TLS",
+    "EMAIL_USE_SSL",
+    "EMAIL_SSL_CERTFILE",
+    "EMAIL_SSL_KEYFILE",
+    "EMAIL_TIMEOUT",
+    "EMAIL_FILE_PATH",
+}
+
+
+# RemovedInDjango70Warning.
+def _validate_email_settings(explicit_settings):
+    deprecated_set = DEPRECATED_EMAIL_SETTINGS.intersection(explicit_settings)
+    if deprecated_set:
+        deprecated = ", ".join(sorted(deprecated_set))
+        settings_are = "settings are" if len(deprecated_set) > 1 else "setting is"
+        if "EMAIL_PROVIDERS" in explicit_settings:
+            raise ImproperlyConfigured(
+                f"The deprecated {deprecated} {settings_are} not allowed when "
+                "EMAIL_PROVIDERS is defined."
+            )
+        msg = (
+            f"The {deprecated} {settings_are} deprecated. Migrate to "
+            "EMAIL_PROVIDERS before Django 7.0."
+        )
+        warnings.warn(
+            msg, RemovedInDjango70Warning, skip_file_prefixes=django_file_prefixes()
+        )
+    elif "EMAIL_PROVIDERS" not in explicit_settings:
+        msg = (
+            "Django 7.0 will not have a default email provider. "
+            "Define EMAIL_PROVIDERS in your settings to configure email."
+        )
+        warnings.warn(
+            msg, RemovedInDjango70Warning, skip_file_prefixes=django_file_prefixes()
+        )
 
 
 class SettingsReference(str):
@@ -76,6 +120,19 @@ class LazySettings(LazyObject):
             _wrapped = self._wrapped
         val = getattr(_wrapped, name)
 
+        # RemovedInDjango70Warning.
+        if name in DEPRECATED_EMAIL_SETTINGS:
+            if hasattr(_wrapped, "EMAIL_PROVIDERS"):
+                raise AttributeError(
+                    f"The {name} setting is not available when "
+                    "EMAIL_PROVIDERS is defined."
+                )
+            msg = (
+                f"The {name} setting is deprecated. Migrate to "
+                "EMAIL_PROVIDERS before Django 7.0."
+            )
+            self._show_deprecation_warning(msg, RemovedInDjango70Warning)
+
         # Special case some settings which require further modification.
         # This is done here for performance reasons so the modified value is
         # cached.
@@ -116,6 +173,7 @@ class LazySettings(LazyObject):
             if not name.isupper():
                 raise TypeError("Setting %r must be uppercase." % name)
             setattr(holder, name, value)
+        _validate_email_settings(options.keys())
         self._wrapped = holder
 
     @staticmethod
@@ -183,6 +241,8 @@ class Settings:
                     )
                 setattr(self, setting, setting_value)
                 self._explicit_settings.add(setting)
+
+        _validate_email_settings(self._explicit_settings)
 
         if hasattr(time, "tzset") and self.TIME_ZONE:
             # When we can, attempt to validate the timezone. If we can't find
