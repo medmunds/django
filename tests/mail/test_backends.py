@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -239,7 +240,15 @@ class SharedEmailBackendTests(MailTestsMixin):
             "'unknown_kwarg'. In Django 7.0, BaseEmailBackend will raise a "
             "TypeError for unknown keyword arguments."
         )
-        with self.assertWarnsMessage(RemovedInDjango70Warning, msg):
+        with (
+            self.assertWarnsMessage(RemovedInDjango70Warning, msg),
+            ignore_warnings(
+                category=RemovedInDjango70Warning,
+                message=re.escape(
+                    "Directly creating EmailBackend instances is deprecated."
+                ),
+            ),
+        ):
             # (Can't call self.create_backend()--it includes alias argument.)
             backend = self.backend_class(
                 **self.backend_test_kwargs, unknown_kwarg="foo"
@@ -577,6 +586,10 @@ class SMTPBackendTestsBase(SimpleTestCase):
 
 
 @skipUnless(HAS_AIOSMTPD, "No aiosmtpd library detected.")
+@ignore_warnings(
+    category=RemovedInDjango70Warning,
+    message=re.escape("Directly creating EmailBackend instances is deprecated."),
+)
 class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
     backend_class = smtp.EmailBackend
 
@@ -628,6 +641,19 @@ class SMTPBackendTests(SharedEmailBackendTests, SMTPBackendTestsBase):
         self.assertIs(backend.use_ssl, False)
         self.assertIsNone(backend.ssl_certfile)
         self.assertIsNone(backend.ssl_keyfile)
+
+    # RemovedInDjango70Warning.
+    def test_direct_construction_deprecated(self):
+        msg = (
+            "Directly creating EmailBackend instances is deprecated. Use "
+            "mail.providers instead."
+        )
+        with self.assertWarnsMessage(RemovedInDjango70Warning, msg):
+            backend = self.backend_class(use_tls=True)
+        # Default values come from deprecated settings without special handling
+        # for port.
+        self.assertEqual(backend.host, "localhost")
+        self.assertEqual(backend.port, 25)
 
     def test_host_option_required(self):
         msg = "EMAIL_PROVIDERS['test_alias']: OPTIONS must define 'host'."
