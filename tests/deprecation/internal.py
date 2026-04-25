@@ -6,20 +6,23 @@
 # through to warn_about_external_use().
 #
 # By default, this module is treated as part of Django internal code. Pass
-# internal_file_prefixes to override that.
+# internal_name_prefixes to override that.
 
 from django.utils.deprecation import (
     RemovedAfterNextVersionWarning,
     RemovedInNextVersionWarning,
     deprecate_posargs,
-    django_file_prefixes,
     warn_about_external_use,
 )
 
 
 def deprecated_function(message=None, category=None, **kwargs):
-    if "internal_file_prefixes" not in kwargs:
-        kwargs["internal_file_prefixes"] = django_file_prefixes() + (__file__,)
+    if "internal_name_prefixes" not in kwargs:
+        # Include this module in Django internals.
+        kwargs["internal_name_prefixes"] = ("django.", __name__)
+    elif kwargs["internal_name_prefixes"] is None:
+        # Use defaults.
+        del kwargs["internal_name_prefixes"]
     warn_about_external_use(
         message or "Message",
         category or RemovedInNextVersionWarning,

@@ -1,4 +1,5 @@
 import inspect
+import sys
 import warnings
 from contextlib import contextmanager
 
@@ -51,11 +52,11 @@ class WarnAboutExternalUseTests(SimpleTestCase):
         self.assertWarningPointsHere(warning)
 
     def test_internal_skip_module_name_does_not_warn(self):
-        # Treat only the current test file as "internal" for this test.
+        # Treat only the current test module as "internal" for this test.
         with self.assertNotWarns(RemovedInNextVersionWarning):
             internal.two_indirections(
                 skip_name_prefixes=internal.__name__,
-                internal_file_prefixes=__file__,
+                internal_name_prefixes=__name__,
             )
 
     def test_skip_fully_qualified_name(self):
@@ -71,8 +72,8 @@ class WarnAboutExternalUseTests(SimpleTestCase):
                 self.subTest(use="internal does not warn", case=case),
                 self.assertNotWarns(RemovedInNextVersionWarning),
             ):
-                # Treat only the current test file as "internal".
-                method(skip_name_prefixes=fqname, internal_file_prefixes=__file__)
+                # Treat only the current test module as "internal".
+                method(skip_name_prefixes=fqname, internal_name_prefixes=__name__)
 
     def test_skip_name_prefixes_tuple(self):
         prefixes = (
@@ -114,6 +115,30 @@ class WarnAboutExternalUseTests(SimpleTestCase):
             internal.nested(skip_name_prefixes=f"{internal.__name__}.nested")
         self.assertWarningPointsHere(warning)
 
+    def test_does_not_mistake_third_party_packages_for_django(self):
+        # Simulate a "django_goodies" package (which is not part of Django)
+        # using a deprecated Django feature.
+        sys.modules["django.something"] = internal
+        self.addCleanup(sys.modules.pop, "django.something", None)
+        code = compile(
+            (
+                "from django.something import deprecated_function\n"
+                "\n"
+                "def use_deprecated_function(*args, **kwargs):\n"
+                "    deprecated_function(*args, **kwargs)\n"
+            ),
+            filename="/venv/site-packages/django_goodies/__init__.py",
+            mode="exec",
+        )
+        namespace = {"__name__": "django_goodies"}
+        exec(code, namespace)
+        with self.assertWarns(RemovedInNextVersionWarning) as warning:
+            # internal_name_prefixes=None forces the default prefixes.
+            namespace["use_deprecated_function"](internal_name_prefixes=None)
+        self.assertEqual(
+            warning.filename, "/venv/site-packages/django_goodies/__init__.py"
+        )
+
     def test_warns_if_effective_caller_has_no_filename(self):
         # Simulate a frame whose source location can't be identified by
         # compiling with an empty filename.
@@ -131,14 +156,6 @@ class WarnAboutExternalUseTests(SimpleTestCase):
             namespace["use_deprecated_function"]()
         self.assertEqual(warning.filename, "")
         self.assertEqual(warning.lineno, 2)
-
-    def test_warns_if_django_file_prefixes_is_empty(self):
-        # Simulate django_file_prefixes() returning an empty tuple.
-        with self.assertWarns(RemovedInNextVersionWarning) as warning:
-            internal.deprecated_function(
-                "Message", RemovedInNextVersionWarning, internal_file_prefixes=()
-            )
-        self.assertWarningPointsHere(warning, offset=-3)
 
     def test_handles_skip_frames_overflow(self):
         too_many_frames = len(inspect.stack()) + 20

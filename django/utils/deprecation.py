@@ -36,7 +36,7 @@ def warn_about_external_use(
     *,
     skip_name_prefixes=None,
     skip_frames=0,
-    internal_file_prefixes=django_file_prefixes(),
+    internal_name_prefixes="django.",
 ):
     """
     Issues a warning when a deprecated feature is used outside of Django, but
@@ -61,12 +61,10 @@ def warn_about_external_use(
     frames (e.g., exactly one decorator or shared helper function). If both
     options are provided, skip_name_prefixes is applied before skip_frames.
 
-    The "effective caller" is the first frame after the ignored ones. If its
-    filename is not within Django, the warning is issued, identifying the
-    effective caller's stacklevel as its source.
-
-    In environments where the caller's filename or Django's file prefixes can't
-    be determined, the warning is issued (to err on the side of caution).
+    The "effective caller" is the first frame after the ignored ones. If it
+    is not within Django, the warning is issued, identifying the effective
+    caller's stacklevel as its source. (If all frames are ignored, the warning
+    is issued at the base of the stack.)
 
     Note: To _always_ issue a warning and attribute it to the first caller
     outside Django, don't use this function. Instead, use::
@@ -98,9 +96,7 @@ def warn_about_external_use(
         for _ in range(skip_frames):
             frame, level = back(frame, level)
 
-        is_internal = frame and frame.f_code.co_filename.startswith(
-            internal_file_prefixes
-        )
+        is_internal = frame and get_fq_name(frame).startswith(internal_name_prefixes)
     finally:
         del frame
 
