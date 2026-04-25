@@ -30,6 +30,84 @@ class RemovedInDjango70Warning(PendingDeprecationWarning):
 RemovedAfterNextVersionWarning = RemovedInDjango70Warning
 
 
+def warn_about_external_use(
+    message,
+    category,
+    *,
+    skip_name_prefixes=None,
+    skip_frames=0,
+    internal_file_prefixes=django_file_prefixes(),
+):
+    """
+    Issues a warning when a deprecated feature is used outside of Django, but
+    skips the warning when the feature is used from within Django. Use this to
+    avoid cascading deprecation warnings when one deprecated feature is
+    implemented on top of another.
+
+    Examines the stack to determine the "effective caller" that is using the
+    deprecated feature. By default, the effective caller is the third frame
+    from the top of the stack -- ignoring warn_about_external_use() itself plus
+    the function calling it.
+
+    Provide skip_name_prefixes (either a single string or a tuple of strings)
+    to ignore additional stack frames by prefix-matching the fully qualified
+    function name (including the module's dotted path). It stops at the first
+    non-matching frame. skip_name_prefixes can be used to skip specific
+    functions, all methods in a class, or everything in a module. It's useful
+    when a shared helper that issues a warning is called through multiple paths
+    of varying depth, all with a common qualname prefix.
+
+    Provide skip_frames (an integer) to ignore a specific number of additional
+    frames (e.g., exactly one decorator or shared helper function). If both
+    options are provided, skip_name_prefixes is applied before skip_frames.
+
+    The "effective caller" is the first frame after the ignored ones. If its
+    filename is not within Django, the warning is issued, identifying the
+    effective caller's stacklevel as its source.
+
+    In environments where the caller's filename or Django's file prefixes can't
+    be determined, the warning is issued (to err on the side of caution).
+
+    Note: To _always_ issue a warning and attribute it to the first caller
+    outside Django, don't use this function. Instead, use::
+
+        warnings.warn(..., skip_file_prefixes=django_file_prefixes())
+
+    to avoid unnecessary stack inspection overhead.
+    """
+
+    def get_fq_name(frame):
+        mod_name = frame.f_globals.get("__name__", "__main__")
+        return f"{mod_name}.{frame.f_code.co_qualname}"
+
+    def back(frame, level):
+        if frame is not None:
+            return frame.f_back, level + 1
+        return None, level
+
+    frame, level = inspect.currentframe(), 0
+    try:
+        # Ignore warn_about_external_use() and its caller.
+        frame, level = back(frame, level)
+        frame, level = back(frame, level)
+
+        if skip_name_prefixes is not None:
+            while frame and get_fq_name(frame).startswith(skip_name_prefixes):
+                frame, level = back(frame, level)
+
+        for _ in range(skip_frames):
+            frame, level = back(frame, level)
+
+        is_internal = frame and frame.f_code.co_filename.startswith(
+            internal_file_prefixes
+        )
+    finally:
+        del frame
+
+    if not is_internal:
+        warnings.warn(message, category=category, stacklevel=level + 1)
+
+
 class warn_about_renamed_method:
     def __init__(
         self, class_name, old_method_name, new_method_name, deprecation_warning
