@@ -1,3 +1,4 @@
+import inspect
 from datetime import date
 
 from django import forms
@@ -1035,10 +1036,12 @@ class ModelAdminTests(TestCase):
         )
         # RemovedInDjango70Warning:
         # with self.assertRaisesMessage(ValueError, msg)
-        with self.assertWarnsMessage(RemovedInDjango70Warning, msg):
+        with self.assertWarnsMessage(RemovedInDjango70Warning, msg) as warning:
 
             class TestModelAdmin(ModelAdmin):
                 list_select_related = True
+
+        self.assertEqual(warning.lineno, inspect.getsourcelines(TestModelAdmin)[1])
 
     # RemovedInDjango70Warning: when the deprecation ends, remove.
     def test_list_select_related_true_deprecated_subclass(self):
@@ -1073,8 +1076,12 @@ class ModelAdminTests(TestCase):
 
         # RemovedInDjango70Warning:
         # with self.assertRaisesMessage(ValueError, msg)
-        with self.assertWarnsMessage(RemovedInDjango70Warning, msg):
+        with self.assertWarnsMessage(RemovedInDjango70Warning, msg) as warning:
             TestModelAdmin(Band, self.site).get_changelist_instance(request)
+        self.assertEqual(
+            warning.lineno,
+            inspect.getsourcelines(TestModelAdmin.get_list_select_related)[1],
+        )
 
 
 class ModelAdminPermissionTests(SimpleTestCase):
